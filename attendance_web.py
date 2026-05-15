@@ -6,7 +6,7 @@ import os
 app = Flask(__name__)
 
 # -----------------------------
-# EMPLOYEES (SAFE - NO EXCEL)
+# EMPLOYEES
 # -----------------------------
 EMPLOYEES = [
     {"id": "16320", "team": "A"},
@@ -19,7 +19,7 @@ EMPLOYEES = [
     {"id": "7363", "team": "C"}
 ]
 
-# ✅ SAME SCHEDULE
+# TEAM SCHEDULE
 TEAM_SCHEDULE = {
     "A": ["Sunday", "Monday", "Tuesday", "Wednesday"],
     "B": ["Wednesday", "Thursday", "Friday", "Saturday"],
@@ -34,16 +34,15 @@ DB_NAME = "attendance.db"
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-
     c.execute("""
-    CREATE TABLE IF NOT EXISTS attendance (
-        id TEXT,
-        date TEXT,
-        status TEXT,
-        UNIQUE(id, date)
-    )
+        CREATE TABLE IF NOT EXISTS attendance (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT,
+            team TEXT,
+            date TEXT,
+            status TEXT
+        )
     """)
-
     conn.commit()
     conn.close()
 
@@ -66,96 +65,59 @@ def find_user(uid):
 # MARK ATTENDANCE
 # -----------------------------
 def mark_attendance(uid):
+    today, today_day = get_today()
     user = find_user(uid)
 
     if not user:
-        return "❌ ID NOT FOUND"
+        return "❌ User not found"
 
-    today, today_day = get_today()
     team = user["team"]
+
+    if today_day in TEAM_SCHEDULEstatus = "1"
+    else:
+        status = "OFF"
 
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
-    # Check if already exists
-    c.execute(
-        "SELECT status FROM attendance WHERE id=? AND date=?",
-        (uid, today)
-    )
-    existing = c.fetchone()
-
-    # -------------------------
-    # WORKING LOGIC
-    # -------------------------
-
-    if today_day not in TEAM_SCHEDULE.get(team, []):
-        status = "OT" if not existing else "OT"
-    else:
-        status = "1" if not existing else existing[0]
-
-    if existing:
+    # Prevent duplicate
+    c.execute("SELECT * FROM attendance WHERE user_id=? AND date=?", (uid, today))
+    if c.fetchone():
         conn.close()
-        return f"⚠️ ALREADY: {existing[0]}"
+        return "⚠️ Already marked today"
 
     c.execute(
-        "INSERT INTO attendance (id, date, status) VALUES (?, ?, ?)",
-        (uid, today, status)
+        "INSERT INTO attendance (user_id, team, date, status) VALUES (?, ?, ?, ?)",
+        (uid, team, today, status)
     )
-
     conn.commit()
     conn.close()
 
-    if status == "1":
-        return "✅ PRESENT"
-    else:
-        return "🔵 OT RECORDED"
+    return f"✅ Marked {status} for {uid}"
 
 # -----------------------------
 # DASHBOARD
 # -----------------------------
 def get_dashboard():
-    today, today_day = get_today()
-
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
-    results = []
-
-    for u in EMPLOYEES:
-        uid = u["id"]
-        team = u["team"]
-
-        c.execute(
-            "SELECT status FROM attendance WHERE id=? AND date=?",
-            (uid, today)
-        )
-        rec = c.fetchone()
-
-        if rec:
-            status = rec[0]
-        else:
-            if today_day in TEAM_SCHEDULE.get(team, []):
-                status = "NI"
-            else:
-                status = "OFF"
-
-        results.append({
-            "id": uid,
-            "team": team,
-            "status": status
-        })
+    c.execute("SELECT user_id, team, date, status FROM attendance ORDER BY date DESC")
+    data = c.fetchall()
 
     conn.close()
-    return results
+    return data
 
 # -----------------------------
 # SUMMARY
 # -----------------------------
 def get_summary(data):
-    summary = {"1":0, "OT":0, "OFF":0, "NI":0}
+    summary = {"1": 0, "OFF": 0}
 
-    for r in data:
-        summary[r["status"]] += 1
+    for row in data:
+        status = row[3]
+        if status in summary:
+            summary[status] += 1
 
     return summary
 
@@ -167,69 +129,47 @@ def index():
     message = ""
 
     if request.method == "POST":
-        uid = request.form["id"]
+        uid = request.form.get("user_id")
         message = mark_attendance(uid)
 
     data = get_dashboard()
     summary = get_summary(data)
 
-    html = """
-    <html>
-    <head>
-        <title>Attendance</title>
-        <style>
-            body { font-family: Arial; text-align:center; }
-            input { font-size:28px; padding:10px; }
-            button { font-size:24px; padding:10px; }
-            table { border-collapse: collapse; margin:auto; }
-            th, td { border:1px solid black; padding:8px; }
-
-            .1 { background:lightgreen; }
-            .OT { background:lightblue; }
-            .OFF { background:#ffeeba; }
-            .NI { background:#f8d7da; }
-        </style>
-    </head>
-
-    <body>
-
-    <h1>Attendance System</h1>
+    return render_template_string("""
+    <h2>📋 Attendance System</h2>
 
     <form method="POST">
-        <input name="id" placeholder="Enter ID Badge" autofocus>
-        <br><br>
+        <input name="user_id" placeholder="Enter ID" required>
         <button type="submit">Submit</button>
     </form>
 
-    <h2>{{message}}</h2>
+    <p>{{message}}</p>
 
-    <h3>Summary</h3>
-    ✅ {{summary["1"]}} |
-    🔵 {{summary["OT"]}} |
-    🟡 {{summary["OFF"]}} |
-    🔴 {{summary["NI"]}}
+    <h3>📊 Summary</h3>
+    Present: {{summary['1']}} |
+    Off: {{summary['OFF']}}
 
-    <h3>Today</h3>
-
-    <table>
-        <tr><th>ID</th><th>Team</th><th>Status</th></tr>
-        {% for r in data %}
-        <tr class="{{r.status}}">
-            <td>{{r.id}}</td>
-            <td>{{r.team}}</td>
-            <td>{{r.status}}</td>
+    <h3>📅 Records</h3>
+    <table border="1" cellpadding="5">
+        <tr>
+            <th>User</th>
+            <th>Team</th>
+            <th>Date</th>
+            <th>Status</th>
+        </tr>
+        {% for row in data %}
+        <tr>
+            <td>{{row[0]}}</td>
+            <td>{{row[1]}}</td>
+            <td>{{row[2]}}</td>
+            <td>{{row[3]}}</td>
         </tr>
         {% endfor %}
     </table>
-
-    </body>
-    </html>
-    """
-
-    return render_template_string(html, data=data, summary=summary, message=message)
+    """, message=message, data=data, summary=summary)
 
 # -----------------------------
-# RUN (Render ready)
+# RUN (Render Ready)
 # -----------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
