@@ -229,3 +229,146 @@ def export():
 
     for row in ws.iter_rows():
         for cell in row:
+            cell.alignment = align
+            cell.border = border
+
+    file = io.BytesIO()
+    wb.save(file)
+    file.seek(0)
+
+    return send_file(file,
+        download_name="attendance.xlsx",
+        as_attachment=True)
+
+# -----------------------------
+# WEB UI
+# -----------------------------
+@app.route("/", methods=["GET","POST"])
+def index():
+    msg = ""
+
+    if request.method == "POST":
+        action = request.form.get("action")
+
+        if action == "checkin":
+            msg = mark_attendance(request.form.get("user_id"))
+
+        elif action == "add":
+            msg = add_user(
+                request.form.get("new_id"),
+                request.form.get("name"),
+                request.form.get("team"),
+                request.form.get("shift"))
+
+        elif action == "edit":
+            msg = update_user(
+                request.form.get("edit_id"),
+                request.form.get("edit_name"),
+                request.form.get("edit_team"),
+                request.form.get("edit_shift"))
+
+        elif action == "delete":
+            msg = remove_user(request.form.get("edit_id"))
+
+    data = get_dashboard()
+    summary = get_summary(data)
+    users = get_users()
+
+    return render_template_string("""
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width">
+<style>
+body{font-family:Arial;background:#f4f6f9;text-align:center}
+.card{background:white;margin:15px;padding:15px;border-radius:10px}
+input,select{padding:10px;margin:5px}
+button{padding:10px;margin:5px}
+a button{background:#0078D4;color:white;border:none}
+.big{font-size:60px;font-weight:bold}
+</style>
+</head>
+
+<body>
+
+<h2>📋 Attendance</h2>
+
+<div class="card">
+<form method="POST">
+<input name="user_id" placeholder="ID">
+<button name="action" value="checkin">Check In</button>
+</form>
+</div>
+
+<div class="card big">
+{{msg}}
+</div>
+
+<div class="card">
+<form method="POST">
+<input name="new_id" placeholder="ID">
+<input name="name" placeholder="Name">
+<select name="team"><option>A</option><option>B</option><option>C</option></select>
+<select name="shift"><option>Morning</option><option>Night</option></select>
+<button name="action" value="add">Add User</button>
+</form>
+</div>
+
+<div class="card">
+<h3>📤 Export</h3>
+export">
+<button>⬇️ Download Excel</button>
+</a>
+</div>
+
+<h3>
+1: {{summary['1']}} |
+OT: {{summary['OT']}} |
+NI: {{summary['NI']}} |
+OFF: {{summary['OFF']}}
+</h3>
+
+<div class="card">
+<h3>User List</h3>
+<table border="1" width="100%">
+{% for u in users %}
+<tr>
+<form method="POST">
+<td>{{u[0]}}</td>
+<td><input name="edit_name" value="{{u[1]}}"></td>
+<td>
+<select name="edit_team">
+<option {% if u[2]=='A' %}selected{% endif %}>A</option>
+<option {% if u[2]=='B' %}selected{% endif %}>B</option>
+<option {% if u[2]=='C' %}selected{% endif %}>C</option>
+</select>
+</td>
+<td>
+<select name="edit_shift">
+<option {% if u[3]=='Morning' %}selected{% endif %}>Morning</option>
+<option {% if u[3]=='Night' %}selected{% endif %}>Night</option>
+</select>
+</td>
+
+<input type="hidden" name="edit_id" value="{{u[0]}}">
+
+<td>
+<button name="action" value="edit">Save</button>
+<button name="action" value="delete">Delete</button>
+</td>
+</form>
+</tr>
+{% endfor %}
+</table>
+</div>
+
+</body>
+</html>
+""", msg=msg, summary=summary, users=users)
+
+# -----------------------------
+# RUN
+# -----------------------------
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
