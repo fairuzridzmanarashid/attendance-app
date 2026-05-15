@@ -1,7 +1,11 @@
-from flask import Flask, request, render_template_string
+from flask import Flask, request, render_template_string, send_file
 import sqlite3
 from datetime import datetime
 import os
+import io
+
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Side
 
 app = Flask(__name__)
 
@@ -23,7 +27,15 @@ def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
-    # Attendance table
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id TEXT PRIMARY KEY,
+            name TEXT,
+            team TEXT,
+            shift TEXT
+        )
+    """)
+
     c.execute("""
         CREATE TABLE IF NOT EXISTS attendance (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,15 +43,6 @@ def init_db():
             team TEXT,
             date TEXT,
             status TEXT
-        )
-    """)
-
-    # Users table
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id TEXT PRIMARY KEY,
-            team TEXT,
-            shift TEXT
         )
     """)
 
@@ -58,67 +61,76 @@ def get_today():
 def is_work_day(team, day):
     return day in TEAM_SCHEDULE.get(team, [])
 
-def find_user(uid):
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-
-    c.execute("SELECT user_id, team, shift FROM users WHERE user_id=?", (uid,))
-    row = c.fetchone()
-    conn.close()
-
-    if row:
-        return {"id": row[0], "team": row[1], "shift": row[2]}
-    return None
-
 # -----------------------------
 # USER MANAGEMENT
 # -----------------------------
-def add_user(user_id, team, shift):
+def add_user(user_id, name, team, shift):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-
     try:
-        c.execute("INSERT INTO users (user_id, team, shift) VALUES (?, ?, ?)",
-                  (user_id, team, shift))
+        c.execute("INSERT INTO users VALUES (?, ?, ?, ?)",
+                  (user_id, name, team, shift))
         conn.commit()
         msg = "✅ User added"
     except:
         msg = "⚠️ User already exists"
-
     conn.close()
     return msg
 
-def remove_user(user_id):
+def update_user(uid, name, team, shift):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-
-    c.execute("DELETE FROM users WHERE user_id=?", (user_id,))
+    c.execute("UPDATE users SET name=?, team=?, shift=? WHERE user_id=?",
+              (name, team, shift, uid))
     conn.commit()
+    conn.close()
+    return "✅ Updated"
 
-    if c.rowcount > 0:
-        msg = "🗑 User removed"
-    else:
-        msg = "❌ User not found"
-
+def remove_user(uid):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("DELETE FROM users WHERE user_id=?", (uid,))
+    conn.commit()
+    msg = "🗑 Deleted" if c.rowcount else "❌ Not found"
     conn.close()
     return msg
 
+def find_user(uid):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT user_id, name, team, shift FROM users WHERE user_id=?", (uid,))
+    row = c.fetchone()
+    conn.close()
+    if row:
+        return {
+            "id": row[0],
+            "name": row[1],
+            "team": row[2],
+            "shift": row[3]
+        }
+    return None
+
+def get_users():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT user_id, name, team, shift FROM users")
+    data = c.fetchall()
+    conn.close()
+    return data
+
 # -----------------------------
-# MARK ATTENDANCE
+# ATTENDANCE
 # -----------------------------
 def mark_attendance(uid):
     today, today_day = get_today()
     user = find_user(uid)
 
     if not user:
-        return "❌ User not found"
+        return "❌ Add user first"
 
     team = user["team"]
 
-    if is_work_day(team, today_day):
-        status = "1"   # Present
-    else:
-        status = "OT"  # Overtime
+    status = "1" if is_work_day(team, today_day) else "OT"
 
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -126,62 +138,52 @@ def mark_attendance(uid):
     c.execute("SELECT * FROM attendance WHERE user_id=? AND date=?", (uid, today))
     if c.fetchone():
         conn.close()
-        return "⚠️ Already marked today"
+        return "⚠️ Already marked"
 
-    c.execute(
-        "INSERT INTO attendance (user_id, team, date, status) VALUES (?, ?, ?, ?)",
-        (uid, team, today, status)
-    )
-
+    c.execute("INSERT INTO attendance (user_id, team, date, status) VALUES (?, ?, ?, ?)",
+              (uid, team, today, status))
     conn.commit()
     conn.close()
 
-    return f"✅ Marked {status}"
+    return f"✅ {user['name']} ({status})"
 
-# -----------------------------
-# AUTO FILL NI (ABSENT)
-# -----------------------------
 def fill_absent():
     today, today_day = get_today()
 
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
-    c.execute("SELECT user_id, team FROM users")
-    users = c.fetchall()
+    users = get_users()
 
-    for user in users:
-        uid, team = user
+    for u in users:
+        uid, name, team, shift = u
 
         c.execute("SELECT * FROM attendance WHERE user_id=? AND date=?", (uid, today))
         if c.fetchone():
             continue
 
-        if is_work_day(team, today_day):
-            status = "NI"
-        else:
-            status = "OFF"
+        status = "NI" if is_work_day(team, today_day) else "OFF"
 
-        c.execute(
-            "INSERT INTO attendance (user_id, team, date, status) VALUES (?, ?, ?, ?)",
-            (uid, team, today, status)
-        )
+        c.execute("INSERT INTO attendance (user_id, team, date, status) VALUES (?, ?, ?, ?)",
+                  (uid, team, today, status))
 
     conn.commit()
     conn.close()
 
-# -----------------------------
-# DASHBOARD
-# -----------------------------
 def get_dashboard():
     fill_absent()
 
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
-    c.execute("SELECT user_id, team, date, status FROM attendance ORDER BY id DESC")
-    data = c.fetchall()
+    c.execute("""
+        SELECT a.user_id, u.name, a.team, a.date, a.status
+        FROM attendance a
+        LEFT JOIN users u ON a.user_id = u.user_id
+        ORDER BY a.id DESC
+    """)
 
+    data = c.fetchall()
     conn.close()
     return data
 
@@ -190,16 +192,58 @@ def get_dashboard():
 # -----------------------------
 def get_summary(data):
     summary = {"1": 0, "OT": 0, "NI": 0, "OFF": 0}
-
-    for row in data:
-        status = row[3]
-        if status in summary:
-            summary[status] += 1
-
+    for r in data:
+        if r[4] in summary:
+            summary[r[4]] += 1
     return summary
 
 # -----------------------------
-# WEB UI (TABLET STYLE)
+# EXPORT EXCEL
+# -----------------------------
+@app.route("/export")
+def export():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+
+    c.execute("""
+        SELECT a.user_id, u.name, a.team, a.date, a.status
+        FROM attendance a
+        LEFT JOIN users u ON a.user_id = u.user_id
+    """)
+
+    rows = c.fetchall()
+    conn.close()
+
+    wb = Workbook()
+    ws = wb.active
+
+    headers = ["ID", "Name", "Team", "Date", "Status"]
+    ws.append(headers)
+
+    for row in rows:
+        ws.append(row)
+
+    align = Alignment(horizontal="center", vertical="center")
+    border = Border(left=Side(style="thin"),
+                    right=Side(style="thin"),
+                    top=Side(style="thin"),
+                    bottom=Side(style="thin"))
+
+    for row in ws.iter_rows():
+        for cell in row:
+            cell.alignment = align
+            cell.border = border
+
+    file = io.BytesIO()
+    wb.save(file)
+    file.seek(0)
+
+    return send_file(file,
+                     download_name="attendance.xlsx",
+                     as_attachment=True)
+
+# -----------------------------
+# WEB UI
 # -----------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -209,101 +253,105 @@ def index():
         action = request.form.get("action")
 
         if action == "checkin":
-            uid = request.form.get("user_id")
-            message = mark_attendance(uid)
+            message = mark_attendance(request.form.get("user_id"))
 
         elif action == "add":
-            uid = request.form.get("new_id")
-            team = request.form.get("team")
-            shift = request.form.get("shift")
-            message = add_user(uid, team, shift)
+            message = add_user(
+                request.form.get("new_id"),
+                request.form.get("name"),
+                request.form.get("team"),
+                request.form.get("shift")
+            )
 
-        elif action == "remove":
-            uid = request.form.get("remove_id")
-            message = remove_user(uid)
+        elif action == "edit":
+            message = update_user(
+                request.form.get("edit_id"),
+                request.form.get("edit_name"),
+                request.form.get("edit_team"),
+                request.form.get("edit_shift")
+            )
+
+        elif action == "delete":
+            message = remove_user(request.form.get("edit_id"))
 
     data = get_dashboard()
     summary = get_summary(data)
+    users = get_users()
 
-    return render_template_string("""
+    return render_template_string(""" 
 <!DOCTYPE html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-
+<meta name="viewport" content="width=device-width">
 <style>
-body { font-family: Arial; background:#f4f6f9; text-align:center; }
-.card {
-    background:white; padding:20px; margin:20px;
-    border-radius:15px; box-shadow:0 4px 10px rgba(0,0,0,0.1);
-}
-input, select {
-    width:90%; padding:15px; margin:5px;
-    font-size:20px; border-radius:10px;
-}
-button {
-    width:95%; padding:15px; font-size:20px;
-    background:#0078D4; color:white;
-    border:none; border-radius:10px;
-}
-.summary div {
-    padding:15px; margin:5px; border-radius:10px;
-    font-size:18px; color:white;
-}
-.present {background:#28a745;}
-.ot {background:#ffc107; color:black;}
-.ni {background:#dc3545;}
-.off {background:#6c757d;}
+body{font-family:Arial;background:#f4f6f9;text-align:center}
+.card{background:white;margin:15px;padding:15px;border-radius:10px}
+input,select{padding:10px;margin:5px}
+button{padding:10px;margin:5px}
 </style>
 </head>
 
 <body>
 
-<h1>📋 Attendance</h1>
+<h2>📋 Attendance</h2>
 
 <div class="card">
-<h2>✅ Check In</h2>
 <form method="POST">
-    <input name="user_id" placeholder="ID Badge" required autofocus>
-    <button name="action" value="checkin">CHECK IN</button>
+<input name="user_id" placeholder="ID">
+<button name="action" value="checkin">Check In</button>
 </form>
 </div>
 
 <div class="card">
-<h2>➕ Add User</h2>
 <form method="POST">
-    <input name="new_id" placeholder="ID Badge" required>
-    <select name="team">
-        <option>A</option><option>B</option><option>C</option>
-    </select>
-    <select name="shift">
-        <option>Morning</option><option>Night</option>
-    </select>
-    <button name="action" value="add">ADD USER</button>
+<input name="new_id" placeholder="ID">
+<input name="name" placeholder="Name">
+<select name="team"><option>A</option><option>B</option><option>C</option></select>
+<select name="shift"><option>Morning</option><option>Night</option></select>
+<button name="action" value="add">Add User</button>
 </form>
 </div>
 
 <div class="card">
-<h2>🗑 Remove User</h2>
-<form method="POST">
-    <input name="remove_id" placeholder="ID Badge" required>
-    <button name="action" value="remove">DELETE USER</button>
-</form>
+/export
 </div>
 
-<p style="font-size:20px;">{{message}}</p>
+<p>{{message}}</p>
 
-<div class="card summary">
-<h2>📊 Summary</h2>
-<div class="present">✅ {{summary['1']}} Present</div>
-<div class="ot">⏱ {{summary['OT']}} OT</div>
-<div class="ni">❌ {{summary['NI']}} NI</div>
-<div class="off">💤 {{summary['OFF']}} OFF</div>
+<h3>Present {{summary['1']}} | OT {{summary['OT']}} | NI {{summary['NI']}} | OFF {{summary['OFF']}}</h3>
+
+<div class="card">
+<h3>User List</h3>
+<table border="1" width="100%">
+{% for u in users %}
+<tr>
+<form method="POST">
+<td>{{u[0]}}</td>
+<td><input name="edit_name" value="{{u[1]}}"></td>
+<td><select name="edit_team">
+<option {% if u[2]=='A' %}selected{% endif %}>A</option>
+<option {% if u[2]=='B' %}selected{% endif %}>B</option>
+<option {% if u[2]=='C' %}selected{% endif %}>C</option>
+</select></td>
+<td><select name="edit_shift">
+<option {% if u[3]=='Morning' %}selected{% endif %}>Morning</option>
+<option {% if u[3]=='Night' %}selected{% endif %}>Night</option>
+</select></td>
+
+<input type="hidden" name="edit_id" value="{{u[0]}}">
+<td>
+<button name="action" value="edit">Save</button>
+<button name="action" value="delete">Delete</button>
+</td>
+</form>
+</tr>
+{% endfor %}
+</table>
 </div>
 
 </body>
 </html>
-""", message=message, summary=summary)
+""", message=message, summary=summary, users=users)
 
 # -----------------------------
 # RUN
