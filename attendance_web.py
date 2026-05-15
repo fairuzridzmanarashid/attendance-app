@@ -62,18 +62,18 @@ def is_work_day(team, day):
     return day in TEAM_SCHEDULE.get(team, [])
 
 # -----------------------------
-# USER MANAGEMENT
+# USER FUNCTIONS
 # -----------------------------
-def add_user(user_id, name, team, shift):
+def add_user(uid, name, team, shift):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     try:
         c.execute("INSERT INTO users VALUES (?, ?, ?, ?)",
-                  (user_id, name, team, shift))
+                  (uid, name, team, shift))
         conn.commit()
         msg = "✅ User added"
     except:
-        msg = "⚠️ User already exists"
+        msg = "⚠️ User exists"
     conn.close()
     return msg
 
@@ -98,16 +98,11 @@ def remove_user(uid):
 def find_user(uid):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    c.execute("SELECT user_id, name, team, shift FROM users WHERE user_id=?", (uid,))
+    c.execute("SELECT user_id, name, team FROM users WHERE user_id=?", (uid,))
     row = c.fetchone()
     conn.close()
     if row:
-        return {
-            "id": row[0],
-            "name": row[1],
-            "team": row[2],
-            "shift": row[3]
-        }
+        return {"id": row[0], "name": row[1], "team": row[2]}
     return None
 
 def get_users():
@@ -142,9 +137,9 @@ def mark_attendance(uid):
 
     c.execute("INSERT INTO attendance (user_id, team, date, status) VALUES (?, ?, ?, ?)",
               (uid, team, today, status))
+
     conn.commit()
     conn.close()
-
     return f"✅ {user['name']} ({status})"
 
 def fill_absent():
@@ -187,11 +182,8 @@ def get_dashboard():
     conn.close()
     return data
 
-# -----------------------------
-# SUMMARY
-# -----------------------------
 def get_summary(data):
-    summary = {"1": 0, "OT": 0, "NI": 0, "OFF": 0}
+    summary = {"1":0,"OT":0,"NI":0,"OFF":0}
     for r in data:
         if r[4] in summary:
             summary[r[4]] += 1
@@ -239,46 +231,44 @@ def export():
     file.seek(0)
 
     return send_file(file,
-                     download_name="attendance.xlsx",
-                     as_attachment=True)
+        download_name="attendance.xlsx",
+        as_attachment=True)
 
 # -----------------------------
 # WEB UI
 # -----------------------------
-@app.route("/", methods=["GET", "POST"])
+@app.route("/", methods=["GET","POST"])
 def index():
-    message = ""
+    msg = ""
 
     if request.method == "POST":
         action = request.form.get("action")
 
         if action == "checkin":
-            message = mark_attendance(request.form.get("user_id"))
+            msg = mark_attendance(request.form.get("user_id"))
 
         elif action == "add":
-            message = add_user(
+            msg = add_user(
                 request.form.get("new_id"),
                 request.form.get("name"),
                 request.form.get("team"),
-                request.form.get("shift")
-            )
+                request.form.get("shift"))
 
         elif action == "edit":
-            message = update_user(
+            msg = update_user(
                 request.form.get("edit_id"),
                 request.form.get("edit_name"),
                 request.form.get("edit_team"),
-                request.form.get("edit_shift")
-            )
+                request.form.get("edit_shift"))
 
         elif action == "delete":
-            message = remove_user(request.form.get("edit_id"))
+            msg = remove_user(request.form.get("edit_id"))
 
     data = get_dashboard()
     summary = get_summary(data)
     users = get_users()
 
-    return render_template_string(""" 
+    return render_template_string("""
 <!DOCTYPE html>
 <html>
 <head>
@@ -288,6 +278,7 @@ body{font-family:Arial;background:#f4f6f9;text-align:center}
 .card{background:white;margin:15px;padding:15px;border-radius:10px}
 input,select{padding:10px;margin:5px}
 button{padding:10px;margin:5px}
+a button{background:#0078D4;color:white;border:none}
 </style>
 </head>
 
@@ -313,12 +304,20 @@ button{padding:10px;margin:5px}
 </div>
 
 <div class="card">
+<h3>📤 Export</h3>
 /export
+<button>⬇️ Download Excel</button>
+</a>
 </div>
 
-<p>{{message}}</p>
+<p>{{msg}}</p>
 
-<h3>Present {{summary['1']}} | OT {{summary['OT']}} | NI {{summary['NI']}} | OFF {{summary['OFF']}}</h3>
+<h3>
+✅ {{summary['1']}} |
+⏱ {{summary['OT']}} |
+❌ {{summary['NI']}} |
+💤 {{summary['OFF']}}
+</h3>
 
 <div class="card">
 <h3>User List</h3>
@@ -328,17 +327,22 @@ button{padding:10px;margin:5px}
 <form method="POST">
 <td>{{u[0]}}</td>
 <td><input name="edit_name" value="{{u[1]}}"></td>
-<td><select name="edit_team">
+<td>
+<select name="edit_team">
 <option {% if u[2]=='A' %}selected{% endif %}>A</option>
 <option {% if u[2]=='B' %}selected{% endif %}>B</option>
 <option {% if u[2]=='C' %}selected{% endif %}>C</option>
-</select></td>
-<td><select name="edit_shift">
+</select>
+</td>
+<td>
+<select name="edit_shift">
 <option {% if u[3]=='Morning' %}selected{% endif %}>Morning</option>
 <option {% if u[3]=='Night' %}selected{% endif %}>Night</option>
-</select></td>
+</select>
+</td>
 
 <input type="hidden" name="edit_id" value="{{u[0]}}">
+
 <td>
 <button name="action" value="edit">Save</button>
 <button name="action" value="delete">Delete</button>
@@ -351,7 +355,7 @@ button{padding:10px;margin:5px}
 
 </body>
 </html>
-""", message=message, summary=summary, users=users)
+""", msg=msg, summary=summary, users=users)
 
 # -----------------------------
 # RUN
