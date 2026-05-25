@@ -1,12 +1,31 @@
-from flask import Flask, request, render_template_string, send_file
+from flask import Flask, request, render_template_string
 import sqlite3
 from datetime import datetime
-import pandas as pd
 import os
 
 app = Flask(__name__)
 
+# -----------------------------
+# CONFIG
+# -----------------------------
 DB_NAME = "attendance.db"
+
+EMPLOYEES = [
+    {"id": "16320", "team": "A"},
+    {"id": "7274", "team": "A"},
+    {"id": "20346", "team": "A"},
+    {"id": "7333", "team": "B"},
+    {"id": "15766", "team": "B"},
+    {"id": "19555", "team": "B"},
+    {"id": "7370", "team": "C"},
+    {"id": "7363", "team": "C"}
+]
+
+TEAM_SCHEDULE = {
+    "A": ["Sunday", "Monday", "Tuesday", "Wednesday"],
+    "B": ["Wednesday", "Thursday", "Friday", "Saturday"],
+    "C": ["Monday", "Tuesday", "Thursday", "Friday"]
+}
 
 # -----------------------------
 # INIT DATABASE
@@ -19,8 +38,10 @@ def init_db():
         CREATE TABLE IF NOT EXISTS attendance (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT,
+            team TEXT,
             date TEXT,
-            time TEXT
+            day TEXT,
+            status TEXT
         )
     """)
 
@@ -30,24 +51,62 @@ def init_db():
 init_db()
 
 # -----------------------------
-# INSERT ATTENDANCE
+# HELPERS
+# -----------------------------
+def get_today():
+    now = datetime.now()
+    return now.strftime("%Y-%m-%d"), now.strftime("%A")
+
+def find_user(uid):
+    for u in EMPLOYEES:
+        if u["id"] == uid:
+            return u
+    return None
+
+# -----------------------------
+# MARK ATTENDANCE
 # -----------------------------
 def mark_attendance(uid):
+    user = find_user(uid)
+    if not user:
+        return "❌ User not found"
+
+    today, today_day = get_today()
+    team = user["team"]
+
+    if today_day in TEAM_SCHEDULE[team]:
+        status = "1"
+    else:
+        status = "OFF"
+
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
-    now = datetime.now()
-    date = now.strftime("%Y-%m-%d")
-    time = now.strftime("%H:%M:%S")
-
-    c.execute("INSERT INTO attendance (user_id, date, time) VALUES (?, ?, ?)",
-              (uid, date, time))
+    c.execute("""
+        INSERT INTO attendance (user_id, team, date, day, status)
+        VALUES (?, ?, ?, ?, ?)
+    """, (uid, team, today, today_day, status))
 
     conn.commit()
     conn.close()
 
+    return f"✅ {uid} marked as {status}"
+
 # -----------------------------
-# HOME PAGE
+# DASHBOARD
+# -----------------------------
+def get_dashboard():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+
+    c.execute("SELECT user_id, team, date, status FROM attendance ORDER BY id DESC LIMIT 10")
+    data = c.fetchall()
+
+    conn.close()
+    return data
+
+# -----------------------------
+# WEB UI
 # -----------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -56,63 +115,50 @@ def index():
     if request.method == "POST":
         uid = request.form.get("user_id")
         if uid:
-            mark_attendance(uid)
-            message = f"✅ Attendance recorded for ID {uid}"
+            message = mark_attendance(uid)
+
+    data = get_dashboard()
 
     return render_template_string("""
     <html>
     <head>
         <title>Attendance System</title>
     </head>
-    <body style="font-family:Arial; text-align:center; padding-top:50px;">
+    <body style="font-family:Arial; text-align:center; padding-top:40px;">
 
         <h1>📋 Attendance System</h1>
 
         <form method="POST">
-            <input type="text" name="user_id" placeholder="Enter User ID" required>
+            <input type="text" name="user_id" placeholder="Enter ID" required>
             <br><br>
             <button type="submit">Submit</button>
         </form>
 
-        <br>
-        <p>{{message}}</p>
+        <p style="margin-top:20px;">{{message}}</p>
 
-        <hr>
+        <h2>Recent Records</h2>
 
-        <h2>📤 Export</h2>
+        <table border="1" style="margin:auto; border-collapse:collapse;">
+            <tr>
+                <th>User ID</th>
+                <th>Team</th>
+                <th>Date</th>
+                <th>Status</th>
+            </tr>
 
-        <!-- FIXED BUTTON -->
-        /export
-            <button style="
-                padding:12px 20px;
-                font-size:16px;
-                background:#4CAF50;
-                color:white;
-                border:none;
-                border-radius:6px;
-                cursor:pointer;">
-                ⬇ Download Excel
-            </button>
-        </a>
+            {% for row in data %}
+            <tr>
+                <td>{{row[0]}}</td>
+                <td>{{row[1]}}</td>
+                <td>{{row[2]}}</td>
+                <td>{{row[3]}}</td>
+            </tr>
+            {% endfor %}
+        </table>
 
     </body>
     </html>
-    """, message=message)
-
-# -----------------------------
-# EXPORT TO EXCEL
-# -----------------------------
-@app.route("/export")
-def export_excel():
-    conn = sqlite3.connect(DB_NAME)
-
-    df = pd.read_sql_query("SELECT * FROM attendance", conn)
-    conn.close()
-
-    file_path = "attendance_export.xlsx"
-    df.to_excel(file_path, index=False)
-
-    return send_file(file_path, as_attachment=True)
+    """, message=message, data=data)
 
 # -----------------------------
 # RUN
@@ -120,3 +166,4 @@ def export_excel():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
+``
