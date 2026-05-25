@@ -68,14 +68,14 @@ def find_user(uid):
 # -----------------------------
 def mark_attendance(uid):
     user = find_user(uid)
+
     if not user:
         return "❌ User not found"
 
     today, today_day = get_today()
     team = user["team"]
 
-    if today_day in TEAM_SCHEDULE[team]:
-        status = "1"
+    if today_day in TEAM_SCHEDULEstatus = "1"
     else:
         status = "OFF"
 
@@ -99,10 +99,16 @@ def get_dashboard():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
-    c.execute("SELECT user_id, team, date, status FROM attendance ORDER BY id DESC LIMIT 10")
-    data = c.fetchall()
+    c.execute("""
+        SELECT user_id, team, date, status 
+        FROM attendance 
+        ORDER BY id DESC 
+        LIMIT 10
+    """)
 
+    data = c.fetchall()
     conn.close()
+
     return data
 
 # -----------------------------
@@ -124,6 +130,7 @@ def index():
     <head>
         <title>Attendance System</title>
     </head>
+
     <body style="font-family:Arial; text-align:center; padding-top:40px;">
 
         <h1>📋 Attendance System</h1>
@@ -134,7 +141,9 @@ def index():
             <button type="submit">Submit</button>
         </form>
 
-        <p style="margin-top:20px;">{{message}}</p>
+        <p style="margin-top:20px; font-weight:bold;">
+            {{message}}
+        </p>
 
         <h2>Recent Records</h2>
 
@@ -165,5 +174,4 @@ def index():
 # -----------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
-``
+    app.run(host="0.0.0.0", port=port)
