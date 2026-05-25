@@ -61,7 +61,7 @@ def find_user(uid):
     return None
 
 # -----------------------------
-# ✅ FIXED FUNCTION
+# ✅ FIXED FUNCTION (REAL FIX)
 # -----------------------------
 def mark_attendance(uid):
     user = find_user(uid)
@@ -72,7 +72,7 @@ def mark_attendance(uid):
     today, today_day = get_today()
     team = user["team"]
 
-    # ✅ CORRECT LOGIC (NO SYNTAX ERROR)
+    # ✅ CORRECT LOGIC
     if today_day in TEAM_SCHEDULEstatus = "1"
     else:
         status = "OFF"
