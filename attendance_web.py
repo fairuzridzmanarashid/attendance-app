@@ -76,8 +76,8 @@ def mark_attendance(uid):
     team = user["team"]
 
     # ✅ FINAL CORRECT LOGIC
-    if today_day in TEAM_SCHEDULE[team]:
- "1"
+
+if today_day in TEAM_SCHEDULEstatus = "1"
 else:
     status = "OFF"
 
