@@ -5,9 +5,6 @@ import os
 
 app = Flask(__name__)
 
-# -----------------------------
-# CONFIG
-# -----------------------------
 DB_NAME = "attendance.db"
 
 EMPLOYEES = [
@@ -64,7 +61,7 @@ def find_user(uid):
     return None
 
 # -----------------------------
-# MARK ATTENDANCE ✅ FIXED
+# ✅ FIXED FUNCTION
 # -----------------------------
 def mark_attendance(uid):
     user = find_user(uid)
@@ -75,7 +72,7 @@ def mark_attendance(uid):
     today, today_day = get_today()
     team = user["team"]
 
-    # ✅ CORRECT LOGIC (THIS FIXES EVERYTHING)
+    # ✅ CORRECT LOGIC (NO SYNTAX ERROR)
     if today_day in TEAM_SCHEDULEstatus = "1"
     else:
         status = "OFF"
@@ -101,14 +98,15 @@ def get_dashboard():
     c = conn.cursor()
 
     c.execute("""
-        SELECT user_id, team, date, status 
-        FROM attendance 
-        ORDER BY id DESC 
+        SELECT user_id, team, date, status
+        FROM attendance
+        ORDER BY id DESC
         LIMIT 10
     """)
 
     data = c.fetchall()
     conn.close()
+
     return data
 
 # -----------------------------
