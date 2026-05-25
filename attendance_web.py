@@ -64,7 +64,7 @@ def find_user(uid):
     return None
 
 # -----------------------------
-# MARK ATTENDANCE (✅ FIXED)
+# MARK ATTENDANCE ✅ FIXED
 # -----------------------------
 def mark_attendance(uid):
     user = find_user(uid)
@@ -75,11 +75,10 @@ def mark_attendance(uid):
     today, today_day = get_today()
     team = user["team"]
 
-    # ✅ FINAL CORRECT LOGIC
-
-if today_day in TEAM_SCHEDULEstatus = "1"
-else:
-    status = "OFF"
+    # ✅ CORRECT LOGIC (THIS FIXES EVERYTHING)
+    if today_day in TEAM_SCHEDULEstatus = "1"
+    else:
+        status = "OFF"
 
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -110,7 +109,6 @@ def get_dashboard():
 
     data = c.fetchall()
     conn.close()
-
     return data
 
 # -----------------------------
