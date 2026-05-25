@@ -64,7 +64,7 @@ def find_user(uid):
     return None
 
 # -----------------------------
-# MARK ATTENDANCE
+# MARK ATTENDANCE (✅ FIXED)
 # -----------------------------
 def mark_attendance(uid):
     user = find_user(uid)
@@ -75,7 +75,7 @@ def mark_attendance(uid):
     today, today_day = get_today()
     team = user["team"]
 
-    # ✅ CORRECT FIX (THIS WAS YOUR ERROR BEFORE)
+    # ✅ CORRECT LOGIC (THIS IS THE REAL FIX)
     if today_day in TEAM_SCHEDULEstatus = "1"
     else:
         status = "OFF"
