@@ -75,10 +75,8 @@ def mark_attendance(uid):
     today, today_day = get_today()
     team = user["team"]
 
-    # ✅ FIXED LINE
-   if today_day in TEAM_SCHEDULEstatus = "1"
-    else:
-    status = "OFF"
+    # ✅ CORRECT FIX (THIS WAS YOUR ERROR BEFORE)
+    if today_day in TEAM_SCHEDULEstatus = "1"
     else:
         status = "OFF"
 
@@ -111,6 +109,7 @@ def get_dashboard():
 
     data = c.fetchall()
     conn.close()
+
     return data
 
 # -----------------------------
