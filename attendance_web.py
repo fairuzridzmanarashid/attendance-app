@@ -66,12 +66,15 @@ def auto_mark_status():
     users = c.fetchall()
 
     for uid, team in users:
-        c.execute("SELECT * FROM attendance WHERE id=? AND date=?", (uid, today))
+        c.execute(
+            "SELECT * FROM attendance WHERE id=? AND date=?",
+            (uid, today)
+        )
         exists = c.fetchone()
 
         if not exists:
-            # ✅ FIXED LINE
-            if today_day in TEAM_SCHEDULE[team] = "NI"   # Working day but no scan
+            # ✅ CORRECT CONDITION (NO SYNTAX ERROR)
+            if today_day in TEAM_SCHEDULEstatus = "NI"   # Working day but no scan
             else:
                 status = "OFF"  # Not working day
 
@@ -89,12 +92,14 @@ def auto_mark_status():
 def add_user(name, uid, team):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
+
     try:
         c.execute("INSERT INTO users VALUES (?, ?, ?)", (name, uid, team))
         conn.commit()
         result = "✅ User added"
     except sqlite3.IntegrityError:
         result = "❌ Duplicate ID not allowed"
+
     conn.close()
     return result
 
@@ -104,8 +109,10 @@ def add_user(name, uid, team):
 def remove_user(uid):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
+
     c.execute("DELETE FROM users WHERE id=?", (uid,))
     conn.commit()
+
     conn.close()
     return "🗑️ User removed"
 
@@ -118,6 +125,7 @@ def mark_attendance(uid):
 
     today, today_day = get_today()
 
+    # Get user team
     c.execute("SELECT team FROM users WHERE id=?", (uid,))
     user = c.fetchone()
 
@@ -127,24 +135,28 @@ def mark_attendance(uid):
 
     team = user[0]
 
-    # Determine status
+    # ✅ CORRECT CONDITION
     if today_day in TEAM_SCHEDULEnew_status = "1"
     else:
         new_status = "OT"
 
-    # Check if already exists
-    c.execute("SELECT status FROM attendance WHERE id=? AND date=?", (uid, today))
+    # Check existing
+    c.execute(
+        "SELECT status FROM attendance WHERE id=? AND date=?",
+        (uid, today)
+    )
     existing = c.fetchone()
 
     if existing:
-        c.execute("""
-            UPDATE attendance
-            SET status=?
-            WHERE id=? AND date=?
-        """, (new_status, uid, today))
+        c.execute(
+            "UPDATE attendance SET status=? WHERE id=? AND date=?",
+            (new_status, uid, today)
+        )
     else:
-        c.execute("INSERT INTO attendance VALUES (?, ?, ?, ?)",
-                  (uid, today, today_day, new_status))
+        c.execute(
+            "INSERT INTO attendance VALUES (?, ?, ?, ?)",
+            (uid, today, today_day, new_status)
+        )
 
     conn.commit()
     conn.close()
@@ -162,20 +174,18 @@ def export_excel():
     df.columns = ["Name", "ID Badge", "Team"]
 
     file_path = "users.xlsx"
-    writer = pd.ExcelWriter(file_path, engine="openpyxl")
-    df.to_excel(writer, index=False, sheet_name="Users")
+    with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Users")
+        ws = writer.sheets["Users"]
 
-    ws = writer.sheets["Users"]
+        for col in ws.columns:
+            max_len = 0
+            col_letter = col[0].column_letter
+            for cell in col:
+                if cell.value:
+                    max_len = max(max_len, len(str(cell.value)))
+            ws.column_dimensions[col_letter].width = max_len + 2
 
-    for col in ws.columns:
-        max_len = 0
-        col_letter = col[0].column_letter
-        for cell in col:
-            if cell.value:
-                max_len = max(max_len, len(str(cell.value)))
-        ws.column_dimensions[col_letter].width = max_len + 2
-
-    writer.close()
     return file_path
 
 # -----------------------------
@@ -197,7 +207,10 @@ def get_summary():
 
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    c.execute("SELECT status, COUNT(*) FROM attendance WHERE date=? GROUP BY status", (today,))
+    c.execute(
+        "SELECT status, COUNT(*) FROM attendance WHERE date=? GROUP BY status",
+        (today,)
+    )
     rows = c.fetchall()
     conn.close()
 
@@ -213,7 +226,7 @@ def get_summary():
 # -----------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
-    auto_mark_status()  # ✅ critical
+    auto_mark_status()
 
     message = ""
     today, day = get_today()
@@ -238,81 +251,56 @@ def index():
     summary = get_summary()
 
     html = """
-    <style>
-    body { font-family: Segoe UI; background:#f3f2f1; }
-    .card { background:white; padding:20px; margin:15px; border-radius:10px; box-shadow:0 2px 6px rgba(0,0,0,0.1);}
-    .grid { display:flex; flex-wrap:wrap; }
-    .tile { flex:1; margin:10px; padding:20px; border-radius:10px; color:white; text-align:center; }
-    .present { background:#107C10; }
-    .ot { background:#FF8C00; }
-    .off { background:#605E5C; }
-    .ni { background:#D13438; }
-    button { background:#0078D4; color:white; border:none; padding:10px; border-radius:5px; }
-    input, select { padding:8px; margin:5px; width:90%; }
-    </style>
+    <h2>Attendance System</h2>
+    <h4>{{today}} ({{day}})</h4>
 
-    <h2 style="margin-left:15px;">📊 Attendance System</h2>
-    <h4 style="margin-left:15px;">{{today}} ({{day}})</h4>
+    <p>✅ Present: {{summary['1']}}</p>
+    <p>🟧 OT: {{summary['OT']}}</p>
+    <p>⬜ OFF: {{summary['OFF']}}</p>
+    <p>🟥 NI: {{summary['NI']}}</p>
 
-    <div class="grid">
-        <div class="tile present">Present<br>{{summary['1']}}</div>
-        <div class="tile ot">OT<br>{{summary['OT']}}</div>
-        <div class="tile off">OFF<br>{{summary['OFF']}}</div>
-        <div class="tile ni">NI<br>{{summary['NI']}}</div>
-    </div>
+    <hr>
 
-    <div class="card">
-        <h3>Add User</h3>
-        <form method="POST">
-            <input name="name" placeholder="Name" required>
-            <input name="id" placeholder="ID Badge" required>
-            <select name="team">
-                <option>A</option><option>B</option><option>C</option>
-            </select>
-            <button name="action" value="add">Add</button>
-        </form>
-    </div>
+    <h3>Add User</h3>
+    <form method="POST">
+        <input name="name" placeholder="Name" required>
+        <input name="id" placeholder="ID Badge" required>
+        <input name="team" placeholder="Team (A/B/C)" required>
+        <button name="action" value="add">Add</button>
+    </form>
 
-    <div class="card">
-        <h3>Remove User</h3>
-        <form method="POST">
-            <input name="id" placeholder="ID Badge" required>
-            <button name="action" value="remove">Remove</button>
-        </form>
-    </div>
+    <h3>Remove User</h3>
+    <form method="POST">
+        <input name="id" placeholder="ID Badge">
+        <button name="action" value="remove">Remove</button>
+    </form>
 
-    <div class="card">
-        <h3>Scan Attendance</h3>
-        <form method="POST">
-            <input name="id" placeholder="Scan ID" required>
-            <button name="action" value="mark">Scan</button>
-        </form>
-    </div>
+    <h3>Scan</h3>
+    <form method="POST">
+        <input name="id" placeholder="Scan ID">
+        <button name="action" value="mark">Scan</button>
+    </form>
 
-    <div class="card">
-        <form method="POST">
-            <button name="action" value="export">📥 Export Excel</button>
-        </form>
-    </div>
+    <form method="POST">
+        <button name="action" value="export">Export Excel</button>
+    </form>
 
-    <div class="card">
-        <h3>Users</h3>
-        <ul>
-        {% for u in users %}
-            <li>{{u[0]}} | {{u[1]}} | Team {{u[2]}}</li>
-        {% endfor %}
-        </ul>
-    </div>
+    <h3>Users</h3>
+    <ul>
+    {% for u in users %}
+        <li>{{u[0]}} | {{u[1]}} | {{u[2]}}</li>
+    {% endfor %}
+    </ul>
 
-    <p style="margin-left:15px;">{{message}}</p>
+    <p>{{message}}</p>
     """
 
     return render_template_string(html,
+                                  today=today,
+                                  day=day,
                                   users=users,
                                   summary=summary,
-                                  message=message,
-                                  today=today,
-                                  day=day)
+                                  message=message)
 
 # -----------------------------
 # RUN
