@@ -2,6 +2,7 @@ from flask import Flask, request, render_template_string, send_file
 import sqlite3
 from datetime import datetime
 import pandas as pd
+from io import BytesIO
 
 app = Flask(__name__)
 DB_NAME = "attendance.db"
@@ -11,7 +12,6 @@ def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
-    # Employees table
     c.execute("""
         CREATE TABLE IF NOT EXISTS employees (
             id TEXT PRIMARY KEY,
@@ -20,7 +20,6 @@ def init_db():
         )
     """)
 
-    # Attendance table
     c.execute("""
         CREATE TABLE IF NOT EXISTS attendance (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,10 +43,10 @@ TEAM_SCHEDULE = {
     "C": ["Monday", "Tuesday", "Thursday", "Friday"]
 }
 
-# ✅ HELPERS
+# ✅ DATE FORMAT UPDATED
 def get_today():
     now = datetime.now()
-    return now.strftime("%Y-%m-%d"), now.strftime("%A")
+    return now.strftime("%d/%m/%y"), now.strftime("%A")  # ✅ CHANGED FORMAT
 
 def find_user(uid):
     conn = sqlite3.connect(DB_NAME)
@@ -61,9 +60,7 @@ def find_user(uid):
 def add_user(uid, name, team):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-
     c.execute("INSERT OR IGNORE INTO employees VALUES (?, ?, ?)", (uid, name, team))
-
     conn.commit()
     conn.close()
     return "User added"
@@ -72,11 +69,9 @@ def add_user(uid, name, team):
 def remove_user(uid):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-
     c.execute("DELETE FROM employees WHERE id=?", (uid,))
     conn.commit()
     conn.close()
-
     return "User removed"
 
 # ✅ MARK ATTENDANCE
@@ -94,7 +89,6 @@ def mark_attendance(uid):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
-    # prevent duplicate
     c.execute("SELECT * FROM attendance WHERE emp_id=? AND date=?", (uid, today))
     if c.fetchone():
         conn.close()
@@ -111,7 +105,7 @@ def mark_attendance(uid):
 
     return "Attendance recorded"
 
-# ✅ GET DATA
+# ✅ DASHBOARD DATA
 def get_dashboard():
     today, _ = get_today()
     conn = sqlite3.connect(DB_NAME)
@@ -120,22 +114,50 @@ def get_dashboard():
     c.execute("SELECT name, emp_id, date, status FROM attendance WHERE date=?", (today,))
     rows = c.fetchall()
 
+    # counters
+    present = sum(1 for r in rows if r[3] == "1")
+    off = sum(1 for r in rows if r[3] == "OFF")
+
+    c.execute("SELECT COUNT(*) FROM employees")
+    total_users = c.fetchone()[0]
+
+    not_marked = total_users - len(rows)
+
     conn.close()
-    return rows
+
+    return rows, present, off, total_users, not_marked
 
 # ✅ EXPORT EXCEL
 @app.route("/export")
 def export_excel():
     conn = sqlite3.connect(DB_NAME)
-    df = pd.read_sql_query("SELECT name AS 'Name', emp_id AS 'ID Badge', date AS 'Date', status AS 'Status' FROM attendance", conn)
+
+    df = pd.read_sql_query("""
+        SELECT 
+        name AS 'Name', 
+        emp_id AS 'ID Badge', 
+        date AS 'Date', 
+        status AS 'Status' 
+        FROM attendance
+    """, conn)
+
     conn.close()
 
-    file = "attendance.xlsx"
-    df.to_excel(file, index=False)
+    output = BytesIO()
 
-    return send_file(file, as_attachment=True)
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Attendance')
 
-# ✅ MAIN UI
+        worksheet = writer.sheets['Attendance']
+        for i, col in enumerate(df.columns):
+            column_width = max(df[col].astype(str).map(len).max(), len(col)) + 2
+            worksheet.column_dimensions[chr(65 + i)].width = column_width
+
+    output.seek(0)
+
+    return send_file(output, download_name="attendance.xlsx", as_attachment=True)
+
+# ✅ UI
 @app.route("/", methods=["GET", "POST"])
 def index():
     message = ""
@@ -158,76 +180,20 @@ def index():
         elif action == "remove":
             message = remove_user(request.form.get("uid"))
 
-    data = get_dashboard()
+    data, present, off, total, not_marked = get_dashboard()
 
     html = """
-    <h1>📋 Attendance System</h1>
+    <style>
+    body { font-family: Arial; background:#f4f6f8; }
+    .container { max-width:1000px; margin:auto; }
 
-    <h3>Today: {{today}} ({{today_day}})</h3>
+    .card {
+        background:white; padding:20px; margin:15px 0;
+        border-radius:10px; box-shadow:0 2px 6px rgba(0,0,0,0.1);
+    }
 
-    <p style="color:green;">{{message}}</p>
+    input, select, button {
+        width:100%; padding:14px; margin:5px 0;
+        border-radius:8px; font-size:18px;
+    }
 
-    <hr>
-
-    <h3>✅ Mark Attendance</h3>
-    <form method="POST">
-        <input name="uid" placeholder="ID Badge" required>
-        <button name="action" value="mark">Submit</button>
-    </form>
-
-    <hr>
-
-    <h3>👤 Add User</h3>
-    <form method="POST">
-        <input name="name" placeholder="Name" required>
-        <input name="uid" placeholder="ID Badge" required>
-        <select name="team">
-            <option>A</option>
-            <option>B</option>
-            <option>C</option>
-        </select>
-        <button name="action" value="add">Add User</button>
-    </form>
-
-    <hr>
-
-    <h3>❌ Remove User</h3>
-    <form method="POST">
-        <input name="uid" placeholder="ID Badge" required>
-        <button name="action" value="remove">Remove</button>
-    </form>
-
-    <hr>
-
-    <h3>📊 Records</h3>
-    <table border="1" cellpadding="5">
-        <tr>
-            <th>Name</th>
-            <th>ID Badge</th>
-            <th>Date</th>
-            <th>Status</th>
-        </tr>
-        {% for r in data %}
-        <tr>
-            <td>{{r[0]}}</td>
-            <td>{{r[1]}}</td>
-            <td>{{r[2]}}</td>
-            <td>{{r[3]}}</td>
-        </tr>
-        {% endfor %}
-    </table>
-
-    <br>
-
-    /export
-    """
-
-    return render_template_string(html,
-                                  today=today,
-                                  today_day=today_day,
-                                  data=data,
-                                  message=message)
-
-# ✅ RUN
-if __name__ == "__main__":
-    app.run(debug=True)
