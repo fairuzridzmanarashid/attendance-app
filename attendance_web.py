@@ -66,17 +66,14 @@ def auto_mark_status():
     users = c.fetchall()
 
     for uid, team in users:
-        c.execute(
-            "SELECT * FROM attendance WHERE id=? AND date=?",
-            (uid, today)
-        )
+        c.execute("SELECT * FROM attendance WHERE id=? AND date=?", (uid, today))
         exists = c.fetchone()
 
         if not exists:
-            # ✅ FIXED PROPERLY
-            if today_day in TEAM_SCHEDULEstatus = "NI"   # working day but not scanned
+            # ✅ FIXED
+            if today_day in TEAM_SCHEDULEstatus = "NI"
             else:
-                status = "OFF"  # not working day
+                status = "OFF"
 
             c.execute(
                 "INSERT INTO attendance VALUES (?, ?, ?, ?)",
@@ -132,15 +129,12 @@ def mark_attendance(uid):
 
     team = user[0]
 
-    # ✅ FIXED PROPERLY
+    # ✅ FIXED
     if today_day in TEAM_SCHEDULEnew_status = "1"
     else:
         new_status = "OT"
 
-    c.execute(
-        "SELECT status FROM attendance WHERE id=? AND date=?",
-        (uid, today)
-    )
+    c.execute("SELECT status FROM attendance WHERE id=? AND date=?", (uid, today))
     existing = c.fetchone()
 
     if existing:
