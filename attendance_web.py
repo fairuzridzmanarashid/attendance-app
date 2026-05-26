@@ -1,21 +1,42 @@
-from flask import Flask, request, render_template_string
+from flask import Flask, request, render_template_string, send_file
 import sqlite3
 from datetime import datetime
+import pandas as pd
 
 app = Flask(__name__)
-
 DB_NAME = "attendance.db"
 
-EMPLOYEES = [
-    {"id": "16320", "team": "A"},
-    {"id": "7274", "team": "A"},
-    {"id": "20346", "team": "A"},
-    {"id": "7333", "team": "B"},
-    {"id": "15766", "team": "B"},
-    {"id": "19555", "team": "B"},
-    {"id": "7370", "team": "C"},
-    {"id": "7363", "team": "C"}
-]
+# ✅ INIT DB
+def init_db():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+
+    # Employees table
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS employees (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            team TEXT
+        )
+    """)
+
+    # Attendance table
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS attendance (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            emp_id TEXT,
+            name TEXT,
+            date TEXT,
+            day TEXT,
+            status TEXT,
+            time TEXT
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
+init_db()
 
 TEAM_SCHEDULE = {
     "A": ["Sunday", "Monday", "Tuesday", "Wednesday"],
@@ -23,34 +44,40 @@ TEAM_SCHEDULE = {
     "C": ["Monday", "Tuesday", "Thursday", "Friday"]
 }
 
-# ✅ INIT DB
-def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS attendance (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            emp_id TEXT,
-            date TEXT,
-            status TEXT,
-            time TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-init_db()
-
 # ✅ HELPERS
 def get_today():
     now = datetime.now()
     return now.strftime("%Y-%m-%d"), now.strftime("%A")
 
 def find_user(uid):
-    for u in EMPLOYEES:
-        if u["id"] == uid:
-            return u
-    return None
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT * FROM employees WHERE id=?", (uid,))
+    user = c.fetchone()
+    conn.close()
+    return user
+
+# ✅ ADD USER
+def add_user(uid, name, team):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+
+    c.execute("INSERT OR IGNORE INTO employees VALUES (?, ?, ?)", (uid, name, team))
+
+    conn.commit()
+    conn.close()
+    return "User added"
+
+# ✅ REMOVE USER
+def remove_user(uid):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+
+    c.execute("DELETE FROM employees WHERE id=?", (uid,))
+    conn.commit()
+    conn.close()
+
+    return "User removed"
 
 # ✅ MARK ATTENDANCE
 def mark_attendance(uid):
@@ -58,9 +85,10 @@ def mark_attendance(uid):
     if not user:
         return "User not found"
 
+    emp_id, name, team = user
     today, today_day = get_today()
 
-    is_work_day = today_day in TEAM_SCHEDULE[user["team"]]
+    is_work_day = today_day in TEAM_SCHEDULE.get(team, [])
     status = "1" if is_work_day else "OFF"
 
     conn = sqlite3.connect(DB_NAME)
@@ -70,78 +98,135 @@ def mark_attendance(uid):
     c.execute("SELECT * FROM attendance WHERE emp_id=? AND date=?", (uid, today))
     if c.fetchone():
         conn.close()
-        return "Already marked today"
+        return "Already marked"
 
-    c.execute(
-        "INSERT INTO attendance (emp_id, date, status, time) VALUES (?, ?, ?, ?)",
-        (uid, today, status, datetime.now().strftime("%H:%M:%S"))
-    )
+    c.execute("""
+        INSERT INTO attendance (emp_id, name, date, day, status, time)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (emp_id, name, today, today_day, status,
+          datetime.now().strftime("%H:%M:%S")))
+
     conn.commit()
     conn.close()
 
     return "Attendance recorded"
 
-# ✅ DASHBOARD
+# ✅ GET DATA
 def get_dashboard():
     today, _ = get_today()
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
-    c.execute("SELECT emp_id, status, time FROM attendance WHERE date=?", (today,))
-    data = c.fetchall()
+    c.execute("SELECT name, emp_id, date, status FROM attendance WHERE date=?", (today,))
+    rows = c.fetchall()
 
     conn.close()
-    return data
+    return rows
 
-# ✅ SUMMARY
-def get_summary(data):
-    summary = {"1": 0, "OFF": 0}
+# ✅ EXPORT EXCEL
+@app.route("/export")
+def export_excel():
+    conn = sqlite3.connect(DB_NAME)
+    df = pd.read_sql_query("SELECT name AS 'Name', emp_id AS 'ID Badge', date AS 'Date', status AS 'Status' FROM attendance", conn)
+    conn.close()
 
-    for row in data:
-        summary[row[1]] += 1
+    file = "attendance.xlsx"
+    df.to_excel(file, index=False)
 
-    return summary
+    return send_file(file, as_attachment=True)
 
-# ✅ UI
+# ✅ MAIN UI
 @app.route("/", methods=["GET", "POST"])
 def index():
     message = ""
 
+    today, today_day = get_today()
+
     if request.method == "POST":
-        uid = request.form.get("uid")
-        message = mark_attendance(uid)
+        action = request.form.get("action")
+
+        if action == "mark":
+            message = mark_attendance(request.form.get("uid"))
+
+        elif action == "add":
+            message = add_user(
+                request.form.get("uid"),
+                request.form.get("name"),
+                request.form.get("team")
+            )
+
+        elif action == "remove":
+            message = remove_user(request.form.get("uid"))
 
     data = get_dashboard()
-    summary = get_summary(data)
 
     html = """
-    <h2>Attendance System</h2>
+    <h1>📋 Attendance System</h1>
 
+    <h3>Today: {{today}} ({{today_day}})</h3>
+
+    <p style="color:green;">{{message}}</p>
+
+    <hr>
+
+    <h3>✅ Mark Attendance</h3>
     <form method="POST">
-        <input name="uid" placeholder="Enter Employee ID" required>
-        <button type="submit">Submit</button>
+        <input name="uid" placeholder="ID Badge" required>
+        <button name="action" value="mark">Submit</button>
     </form>
 
-    <p>{{message}}</p>
+    <hr>
 
-    <h3>Summary</h3>
-    Present: {{summary["1"]}} <br>
-    OFF: {{summary["OFF"]}}
+    <h3>👤 Add User</h3>
+    <form method="POST">
+        <input name="name" placeholder="Name" required>
+        <input name="uid" placeholder="ID Badge" required>
+        <select name="team">
+            <option>A</option>
+            <option>B</option>
+            <option>C</option>
+        </select>
+        <button name="action" value="add">Add User</button>
+    </form>
 
-    <h3>Today Records</h3>
-    <table border="1">
-        <tr><th>ID</th><th>Status</th><th>Time</th></tr>
+    <hr>
+
+    <h3>❌ Remove User</h3>
+    <form method="POST">
+        <input name="uid" placeholder="ID Badge" required>
+        <button name="action" value="remove">Remove</button>
+    </form>
+
+    <hr>
+
+    <h3>📊 Records</h3>
+    <table border="1" cellpadding="5">
+        <tr>
+            <th>Name</th>
+            <th>ID Badge</th>
+            <th>Date</th>
+            <th>Status</th>
+        </tr>
         {% for r in data %}
         <tr>
             <td>{{r[0]}}</td>
             <td>{{r[1]}}</td>
             <td>{{r[2]}}</td>
+            <td>{{r[3]}}</td>
         </tr>
         {% endfor %}
     </table>
+
+    <br>
+
+    /export
     """
 
-    return render_template_string(html, data=data, summary=summary, message=message)
+    return render_template_string(html,
+                                  today=today,
+                                  today_day=today_day,
+                                  data=data,
+                                  message=message)
 
 # ✅ RUN
 if __name__ == "__main__":
