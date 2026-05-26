@@ -1,8 +1,8 @@
 from flask import Flask, request, render_template_string, send_file
 import sqlite3
 from datetime import datetime
-import os
 import pandas as pd
+import os
 
 app = Flask(__name__)
 
@@ -17,7 +17,7 @@ TEAM_SCHEDULE = {
 }
 
 # -----------------------------
-# DATABASE INIT
+# INIT DATABASE
 # -----------------------------
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -27,7 +27,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
             name TEXT,
-            shift TEXT
+            shift TEXT,
+            team TEXT
         )
     """)
 
@@ -65,12 +66,12 @@ def get_user(uid):
 # -----------------------------
 # ADD USER
 # -----------------------------
-def add_user(name, uid, shift):
+def add_user(name, uid, shift, team):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
     try:
-        c.execute("INSERT INTO users VALUES (?, ?, ?)", (uid, name, shift))
+        c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", (uid, name, shift, team))
         conn.commit()
         msg = "✅ User added"
     except:
@@ -154,8 +155,7 @@ def mark_attendance(uid):
         # OFF → OT
         if record[2] == "OFF":
             c.execute("""
-                UPDATE attendance
-                SET status='OT'
+                UPDATE attendance SET status='OT'
                 WHERE id=? AND date=?
             """, (uid, today_date))
 
@@ -166,8 +166,7 @@ def mark_attendance(uid):
         # NI → Present
         elif record[2] == "NI":
             c.execute("""
-                UPDATE attendance
-                SET status='1'
+                UPDATE attendance SET status='1'
                 WHERE id=? AND date=?
             """, (uid, today_date))
 
@@ -179,7 +178,7 @@ def mark_attendance(uid):
             conn.close()
             return "⚠️ Already recorded"
 
-    # fallback
+    # fallback (safety)
     if today_day in working_days:
         status = "1"
     else:
@@ -197,7 +196,7 @@ def mark_attendance(uid):
 
 
 # -----------------------------
-# EXPORT
+# EXPORT EXCEL
 # -----------------------------
 def export_excel():
     conn = sqlite3.connect(DB_NAME)
@@ -231,7 +230,8 @@ def index():
             message = add_user(
                 request.form.get("name"),
                 request.form.get("uid"),
-                request.form.get("shift")
+                request.form.get("shift"),
+                request.form.get("team")
             )
 
         elif action == "remove":
@@ -250,7 +250,7 @@ def index():
     today, _ = get_today()
 
     c.execute("""
-        SELECT u.id, u.name, u.shift, a.status
+        SELECT u.id, u.name, u.shift, u.team, a.status
         FROM users u
         LEFT JOIN attendance a
         ON u.id = a.id AND a.date = ?
@@ -259,8 +259,9 @@ def index():
     data = c.fetchall()
 
     summary = {"1": 0, "OT": 0, "OFF": 0, "NI": 0}
+
     for d in data:
-        status = d[3] if d[3] else "NI"
+        status = d[4] if d[4] else "NI"
         if status in summary:
             summary[status] += 1
 
@@ -271,16 +272,18 @@ def index():
 <head>
 <style>
 body { font-family: Arial; margin: 20px; }
-h2 { text-align: center; }
 
-.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+}
 
 .card {
     padding: 20px;
     text-align: center;
     color: white;
     border-radius: 10px;
-    font-size: 20px;
 }
 
 .present { background: green; }
@@ -298,7 +301,6 @@ h2 { text-align: center; }
 input, select, button {
     padding: 10px;
     margin: 5px;
-    font-size: 16px;
 }
 
 table {
@@ -326,9 +328,9 @@ th, td {
 </div>
 
 <div class="section">
-    <h3>Scan</h3>
+    <h3>Scan Attendance</h3>
     <form method="post">
-        <input name="uid" placeholder="Scan ID" autofocus>
+        <input name="uid" placeholder="Enter ID">
         <button name="action" value="attendance">Submit</button>
     </form>
 </div>
@@ -341,6 +343,11 @@ th, td {
         <select name="shift">
             <option>Day</option>
             <option>Night</option>
+        </select>
+        <select name="team">
+            <option>A</option>
+            <option>B</option>
+            <option>C</option>
         </select>
         <button name="action" value="add">Add</button>
     </form>
@@ -361,19 +368,22 @@ th, td {
 </div>
 
 <table>
-<tr><th>ID</th><th>Name</th><th>Shift</th><th>Status</th></tr>
+<tr>
+<th>ID</th><th>Name</th><th>Shift</th><th>Team</th><th>Status</th>
+</tr>
 
 {% for u in data %}
 <tr>
 <td>{{u[0]}}</td>
 <td>{{u[1]}}</td>
 <td>{{u[2]}}</td>
+<td>{{u[3]}}</td>
 <td>
-{% if u[3] == '1' %}
+{% if u[4] == '1' %}
 <span style="color:green">Present</span>
-{% elif u[3] == 'OT' %}
+{% elif u[4] == 'OT' %}
 <span style="color:orange">OT</span>
-{% elif u[3] == 'OFF' %}
+{% elif u[4] == 'OFF' %}
 <span style="color:gray">OFF</span>
 {% else %}
 <span style="color:red">NI</span>
