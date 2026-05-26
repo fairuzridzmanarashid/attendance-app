@@ -70,8 +70,8 @@ def auto_mark_status():
         exists = c.fetchone()
 
         if not exists:
-            # ✅ FIXED
-            if today_day in TEAM_SCHEDULEstatus = "NI"
+            # ✅ CORRECT LOGIC (FIXED)
+            if today_day in TEAM_SCHEDULE[team] = "NI"
             else:
                 status = "OFF"
 
@@ -129,8 +129,8 @@ def mark_attendance(uid):
 
     team = user[0]
 
-    # ✅ FIXED
-    if today_day in TEAM_SCHEDULEnew_status = "1"
+    # ✅ CORRECT LOGIC (FIXED)
+    if today_day in TEAM_SCHEDULE[team] = "1"
     else:
         new_status = "OT"
 
@@ -286,12 +286,14 @@ def index():
     <p>{{message}}</p>
     """
 
-    return render_template_string(html,
-                                  today=today,
-                                  day=day,
-                                  users=users,
-                                  summary=summary,
-                                  message=message)
+    return render_template_string(
+        html,
+        today=today,
+        day=day,
+        users=users,
+        summary=summary,
+        message=message
+    )
 
 # -----------------------------
 # RUN
