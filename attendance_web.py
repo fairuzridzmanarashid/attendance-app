@@ -66,12 +66,15 @@ def auto_mark_status():
     users = c.fetchall()
 
     for uid, team in users:
-        c.execute("SELECT * FROM attendance WHERE id=? AND date=?", (uid, today))
+        c.execute(
+            "SELECT * FROM attendance WHERE id=? AND date=?",
+            (uid, today)
+        )
         exists = c.fetchone()
 
         if not exists:
-            # ✅ CORRECT SYNTAX (THIS IS THE FIX)
-            if today_day in TEAM_SCHEDULE[team] = "NI"   # working day but not scanned
+            # ✅ FIXED PROPERLY
+            if today_day in TEAM_SCHEDULEstatus = "NI"   # working day but not scanned
             else:
                 status = "OFF"  # not working day
 
@@ -129,21 +132,22 @@ def mark_attendance(uid):
 
     team = user[0]
 
-    # ✅ CORRECT SYNTAX
+    # ✅ FIXED PROPERLY
     if today_day in TEAM_SCHEDULEnew_status = "1"
     else:
         new_status = "OT"
 
-    # Check existing record
-    c.execute("SELECT status FROM attendance WHERE id=? AND date=?", (uid, today))
+    c.execute(
+        "SELECT status FROM attendance WHERE id=? AND date=?",
+        (uid, today)
+    )
     existing = c.fetchone()
 
     if existing:
-        c.execute("""
-            UPDATE attendance
-            SET status=?
-            WHERE id=? AND date=?
-        """, (new_status, uid, today))
+        c.execute(
+            "UPDATE attendance SET status=? WHERE id=? AND date=?",
+            (new_status, uid, today)
+        )
     else:
         c.execute(
             "INSERT INTO attendance VALUES (?, ?, ?, ?)",
@@ -156,7 +160,7 @@ def mark_attendance(uid):
     return f"✅ Recorded as {new_status}"
 
 # -----------------------------
-# EXPORT USERS TO EXCEL
+# EXPORT USERS
 # -----------------------------
 def export_excel():
     conn = sqlite3.connect(DB_NAME)
@@ -174,11 +178,9 @@ def export_excel():
         for col in ws.columns:
             max_len = 0
             col_letter = col[0].column_letter
-
             for cell in col:
                 if cell.value:
                     max_len = max(max_len, len(str(cell.value)))
-
             ws.column_dimensions[col_letter].width = max_len + 2
 
     return file_path
@@ -204,9 +206,9 @@ def get_summary():
     c = conn.cursor()
 
     c.execute("""
-        SELECT status, COUNT(*) 
-        FROM attendance 
-        WHERE date=? 
+        SELECT status, COUNT(*)
+        FROM attendance
+        WHERE date=?
         GROUP BY status
     """, (today,))
 
@@ -221,11 +223,10 @@ def get_summary():
     return summary
 
 # -----------------------------
-# WEB UI
+# UI
 # -----------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
-
     auto_mark_status()
 
     message = ""
@@ -235,11 +236,7 @@ def index():
         action = request.form.get("action")
 
         if action == "add":
-            message = add_user(
-                request.form["name"],
-                request.form["id"],
-                request.form["team"]
-            )
+            message = add_user(request.form["name"], request.form["id"], request.form["team"])
 
         elif action == "remove":
             message = remove_user(request.form["id"])
@@ -295,17 +292,15 @@ def index():
     <p>{{message}}</p>
     """
 
-    return render_template_string(
-        html,
-        today=today,
-        day=day,
-        users=users,
-        summary=summary,
-        message=message
-    )
+    return render_template_string(html,
+                                  today=today,
+                                  day=day,
+                                  users=users,
+                                  summary=summary,
+                                  message=message)
 
 # -----------------------------
-# RUN APP
+# RUN
 # -----------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
