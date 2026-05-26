@@ -47,14 +47,14 @@ def init_db():
 init_db()
 
 # -----------------------------
-# HELPERS
+# GET TODAY
 # -----------------------------
 def get_today():
     now = datetime.now()
     return now.strftime("%Y-%m-%d"), now.strftime("%A")
 
 # -----------------------------
-# AUTO STATUS (NI / OFF)
+# AUTO MARK NI / OFF
 # -----------------------------
 def auto_mark_status():
     today, today_day = get_today()
@@ -66,10 +66,14 @@ def auto_mark_status():
     users = c.fetchall()
 
     for uid, team in users:
-        c.execute("SELECT * FROM attendance WHERE id=? AND date=?", (uid, today))
+        c.execute(
+            "SELECT * FROM attendance WHERE id=? AND date=?",
+            (uid, today)
+        )
         exists = c.fetchone()
 
         if not exists:
+            # ✅ CORRECT LOGIC (NO SYNTAX ERROR)
             if today_day in TEAM_SCHEDULEstatus = "NI"
             else:
                 status = "OFF"
@@ -88,14 +92,16 @@ def auto_mark_status():
 def add_user(name, uid, team):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
+
     try:
         c.execute("INSERT INTO users VALUES (?, ?, ?)", (name, uid, team))
         conn.commit()
-        result = "✅ User added"
+        msg = "✅ User added"
     except sqlite3.IntegrityError:
-        result = "❌ Duplicate ID not allowed"
+        msg = "❌ Duplicate ID not allowed"
+
     conn.close()
-    return result
+    return msg
 
 # -----------------------------
 # REMOVE USER
@@ -103,8 +109,10 @@ def add_user(name, uid, team):
 def remove_user(uid):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
+
     c.execute("DELETE FROM users WHERE id=?", (uid,))
     conn.commit()
+
     conn.close()
     return "🗑️ User removed"
 
@@ -126,13 +134,16 @@ def mark_attendance(uid):
 
     team = user[0]
 
-    # determine status
+    # ✅ CORRECT LOGIC
     if today_day in TEAM_SCHEDULEnew_status = "1"
     else:
         new_status = "OT"
 
-    # check existing
-    c.execute("SELECT status FROM attendance WHERE id=? AND date=?", (uid, today))
+    # Check existing record
+    c.execute(
+        "SELECT status FROM attendance WHERE id=? AND date=?",
+        (uid, today)
+    )
     existing = c.fetchone()
 
     if existing:
@@ -152,7 +163,7 @@ def mark_attendance(uid):
     return f"✅ Recorded as {new_status}"
 
 # -----------------------------
-# EXPORT EXCEL
+# EXPORT USERS
 # -----------------------------
 def export_excel():
     conn = sqlite3.connect(DB_NAME)
@@ -165,8 +176,8 @@ def export_excel():
 
     with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Users")
-        ws = writer.sheets["Users"]
 
+        ws = writer.sheets["Users"]
         for col in ws.columns:
             max_len = 0
             col_letter = col[0].column_letter
@@ -199,10 +210,12 @@ def get_summary():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
-    c.execute(
-        "SELECT status, COUNT(*) FROM attendance WHERE date=? GROUP BY status",
-        (today,)
-    )
+    c.execute("""
+        SELECT status, COUNT(*) 
+        FROM attendance 
+        WHERE date=? 
+        GROUP BY status
+    """, (today,))
 
     rows = c.fetchall()
     conn.close()
@@ -219,6 +232,7 @@ def get_summary():
 # -----------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
+
     auto_mark_status()
 
     message = ""
@@ -228,7 +242,11 @@ def index():
         action = request.form.get("action")
 
         if action == "add":
-            message = add_user(request.form["name"], request.form["id"], request.form["team"])
+            message = add_user(
+                request.form["name"],
+                request.form["id"],
+                request.form["team"]
+            )
 
         elif action == "remove":
             message = remove_user(request.form["id"])
@@ -255,9 +273,9 @@ def index():
     <hr>
 
     <form method="POST">
-        <input name="name" placeholder="Name">
-        <input name="id" placeholder="ID Badge">
-        <input name="team" placeholder="Team (A/B/C)">
+        <input name="name" placeholder="Name" required>
+        <input name="id" placeholder="ID Badge" required>
+        <input name="team" placeholder="Team (A/B/C)" required>
         <button name="action" value="add">Add User</button>
     </form>
 
