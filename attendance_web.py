@@ -18,7 +18,7 @@ TEAM_SCHEDULE = {
 }
 
 # -----------------------------
-# DB INIT
+# INIT DB
 # -----------------------------
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -66,17 +66,13 @@ def auto_mark_status():
     users = c.fetchall()
 
     for uid, team in users:
-        c.execute(
-            "SELECT * FROM attendance WHERE id=? AND date=?",
-            (uid, today)
-        )
+        c.execute("SELECT * FROM attendance WHERE id=? AND date=?", (uid, today))
         exists = c.fetchone()
 
         if not exists:
-            # ✅ CORRECT CONDITION (NO SYNTAX ERROR)
-            if today_day in TEAM_SCHEDULEstatus = "NI"   # Working day but no scan
+            if today_day in TEAM_SCHEDULEstatus = "NI"
             else:
-                status = "OFF"  # Not working day
+                status = "OFF"
 
             c.execute(
                 "INSERT INTO attendance VALUES (?, ?, ?, ?)",
@@ -92,14 +88,12 @@ def auto_mark_status():
 def add_user(name, uid, team):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-
     try:
         c.execute("INSERT INTO users VALUES (?, ?, ?)", (name, uid, team))
         conn.commit()
         result = "✅ User added"
     except sqlite3.IntegrityError:
         result = "❌ Duplicate ID not allowed"
-
     conn.close()
     return result
 
@@ -109,10 +103,8 @@ def add_user(name, uid, team):
 def remove_user(uid):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-
     c.execute("DELETE FROM users WHERE id=?", (uid,))
     conn.commit()
-
     conn.close()
     return "🗑️ User removed"
 
@@ -125,7 +117,6 @@ def mark_attendance(uid):
 
     today, today_day = get_today()
 
-    # Get user team
     c.execute("SELECT team FROM users WHERE id=?", (uid,))
     user = c.fetchone()
 
@@ -135,16 +126,13 @@ def mark_attendance(uid):
 
     team = user[0]
 
-    # ✅ CORRECT CONDITION
+    # determine status
     if today_day in TEAM_SCHEDULEnew_status = "1"
     else:
         new_status = "OT"
 
-    # Check existing
-    c.execute(
-        "SELECT status FROM attendance WHERE id=? AND date=?",
-        (uid, today)
-    )
+    # check existing
+    c.execute("SELECT status FROM attendance WHERE id=? AND date=?", (uid, today))
     existing = c.fetchone()
 
     if existing:
@@ -174,6 +162,7 @@ def export_excel():
     df.columns = ["Name", "ID Badge", "Team"]
 
     file_path = "users.xlsx"
+
     with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Users")
         ws = writer.sheets["Users"]
@@ -181,9 +170,11 @@ def export_excel():
         for col in ws.columns:
             max_len = 0
             col_letter = col[0].column_letter
+
             for cell in col:
                 if cell.value:
                     max_len = max(max_len, len(str(cell.value)))
+
             ws.column_dimensions[col_letter].width = max_len + 2
 
     return file_path
@@ -207,10 +198,12 @@ def get_summary():
 
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
+
     c.execute(
         "SELECT status, COUNT(*) FROM attendance WHERE date=? GROUP BY status",
         (today,)
     )
+
     rows = c.fetchall()
     conn.close()
 
@@ -251,7 +244,7 @@ def index():
     summary = get_summary()
 
     html = """
-    <h2>Attendance System</h2>
+    <h2>📊 Attendance System</h2>
     <h4>{{today}} ({{day}})</h4>
 
     <p>✅ Present: {{summary['1']}}</p>
@@ -261,21 +254,18 @@ def index():
 
     <hr>
 
-    <h3>Add User</h3>
     <form method="POST">
-        <input name="name" placeholder="Name" required>
-        <input name="id" placeholder="ID Badge" required>
-        <input name="team" placeholder="Team (A/B/C)" required>
-        <button name="action" value="add">Add</button>
+        <input name="name" placeholder="Name">
+        <input name="id" placeholder="ID Badge">
+        <input name="team" placeholder="Team (A/B/C)">
+        <button name="action" value="add">Add User</button>
     </form>
 
-    <h3>Remove User</h3>
     <form method="POST">
         <input name="id" placeholder="ID Badge">
-        <button name="action" value="remove">Remove</button>
+        <button name="action" value="remove">Remove User</button>
     </form>
 
-    <h3>Scan</h3>
     <form method="POST">
         <input name="id" placeholder="Scan ID">
         <button name="action" value="mark">Scan</button>
@@ -288,7 +278,7 @@ def index():
     <h3>Users</h3>
     <ul>
     {% for u in users %}
-        <li>{{u[0]}} | {{u[1]}} | {{u[2]}}</li>
+        <li>{{u[0]}} | {{u[1]}} | Team {{u[2]}}</li>
     {% endfor %}
     </ul>
 
