@@ -9,7 +9,7 @@ app = Flask(__name__)
 DB_NAME = "attendance.db"
 
 # -----------------------------
-# SHIFT SCHEDULE (KEY LOGIC)
+# SHIFT SCHEDULE
 # -----------------------------
 TEAM_SCHEDULE = {
     "Day": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
@@ -23,7 +23,6 @@ def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
-    # USERS
     c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
@@ -32,7 +31,6 @@ def init_db():
         )
     """)
 
-    # ATTENDANCE
     c.execute("""
         CREATE TABLE IF NOT EXISTS attendance (
             id TEXT,
@@ -46,7 +44,6 @@ def init_db():
     conn.close()
 
 init_db()
-
 
 # -----------------------------
 # HELPERS
@@ -98,7 +95,7 @@ def remove_user(uid):
 
 
 # -----------------------------
-# AUTO OFF / NI (IMPORTANT)
+# AUTO OFF / NI
 # -----------------------------
 def auto_mark_absent():
     today_date, today_day = get_today()
@@ -113,7 +110,6 @@ def auto_mark_absent():
         uid = u[0]
         shift = u[2]
 
-        # check if already has record
         c.execute("SELECT * FROM attendance WHERE id=? AND date=?", (uid, today_date))
         record = c.fetchone()
 
@@ -121,9 +117,9 @@ def auto_mark_absent():
             working_days = TEAM_SCHEDULE[shift]
 
             if today_day in working_days:
-                status = "NI"   # Not In
+                status = "NI"
             else:
-                status = "OFF"  # Off Day
+                status = "OFF"
 
             c.execute(
                 "INSERT INTO attendance VALUES (?, ?, ?)",
@@ -135,7 +131,7 @@ def auto_mark_absent():
 
 
 # -----------------------------
-# MARK ATTENDANCE (MAIN LOGIC)
+# MARK ATTENDANCE
 # -----------------------------
 def mark_attendance(uid):
     user = get_user(uid)
@@ -149,40 +145,41 @@ def mark_attendance(uid):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
-    # check existing record
     c.execute("SELECT * FROM attendance WHERE id=? AND date=?", (uid, today_date))
     record = c.fetchone()
 
     working_days = TEAM_SCHEDULE[shift]
 
     if record:
-        # ✅ If previously OFF → convert to OT
+        # OFF → OT
         if record[2] == "OFF":
             c.execute("""
                 UPDATE attendance
                 SET status='OT'
                 WHERE id=? AND date=?
             """, (uid, today_date))
+
             conn.commit()
             conn.close()
-            return f"🔥 OT recorded (worked on OFF day): {user[1]}"
+            return f"🔥 OT recorded (OFF day): {user[1]}"
 
-        # ✅ If previously NI → convert to normal
+        # NI → Present
         elif record[2] == "NI":
             c.execute("""
                 UPDATE attendance
                 SET status='1'
                 WHERE id=? AND date=?
             """, (uid, today_date))
+
             conn.commit()
             conn.close()
-            return f"✅ Attendance recorded: {user[1]}"
+            return f"✅ Present: {user[1]}"
 
         else:
             conn.close()
-            return "⚠️ Already marked today"
+            return "⚠️ Already recorded"
 
-    # if no record (rare)
+    # fallback
     if today_day in working_days:
         status = "1"
     else:
@@ -196,11 +193,11 @@ def mark_attendance(uid):
     conn.commit()
     conn.close()
 
-    return f"✅ Attendance recorded: {user[1]}"
+    return f"✅ Recorded: {user[1]}"
 
 
 # -----------------------------
-# EXPORT TO EXCEL
+# EXPORT
 # -----------------------------
 def export_excel():
     conn = sqlite3.connect(DB_NAME)
@@ -219,13 +216,12 @@ def export_excel():
 
 
 # -----------------------------
-# WEB UI
+# DASHBOARD UI
 # -----------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
     message = ""
 
-    # ✅ IMPORTANT: Run daily auto marking
     auto_mark_absent()
 
     if request.method == "POST":
@@ -248,45 +244,154 @@ def index():
             file = export_excel()
             return send_file(file, as_attachment=True)
 
-    return render_template_string("""
-    <h2>Attendance System</h2>
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
 
+    today, _ = get_today()
+
+    c.execute("""
+        SELECT u.id, u.name, u.shift, a.status
+        FROM users u
+        LEFT JOIN attendance a
+        ON u.id = a.id AND a.date = ?
+    """, (today,))
+
+    data = c.fetchall()
+
+    summary = {"1": 0, "OT": 0, "OFF": 0, "NI": 0}
+    for d in data:
+        status = d[3] if d[3] else "NI"
+        if status in summary:
+            summary[status] += 1
+
+    conn.close()
+
+    return render_template_string("""
+<html>
+<head>
+<style>
+body { font-family: Arial; margin: 20px; }
+h2 { text-align: center; }
+
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+
+.card {
+    padding: 20px;
+    text-align: center;
+    color: white;
+    border-radius: 10px;
+    font-size: 20px;
+}
+
+.present { background: green; }
+.ot { background: orange; }
+.off { background: gray; }
+.ni { background: red; }
+
+.section {
+    border: 1px solid #ccc;
+    padding: 15px;
+    margin-top: 20px;
+    border-radius: 10px;
+}
+
+input, select, button {
+    padding: 10px;
+    margin: 5px;
+    font-size: 16px;
+}
+
+table {
+    width: 100%;
+    margin-top: 20px;
+    border-collapse: collapse;
+}
+
+th, td {
+    padding: 10px;
+    border-bottom: 1px solid #ddd;
+}
+</style>
+</head>
+
+<body>
+
+<h2>📊 Attendance Dashboard</h2>
+
+<div class="grid">
+    <div class="card present">Present<br>{{summary['1']}}</div>
+    <div class="card ot">OT<br>{{summary['OT']}}</div>
+    <div class="card off">OFF<br>{{summary['OFF']}}</div>
+    <div class="card ni">NI<br>{{summary['NI']}}</div>
+</div>
+
+<div class="section">
+    <h3>Scan</h3>
+    <form method="post">
+        <input name="uid" placeholder="Scan ID" autofocus>
+        <button name="action" value="attendance">Submit</button>
+    </form>
+</div>
+
+<div class="section">
     <h3>Add User</h3>
     <form method="post">
-        Name: <input name="name"><br>
-        Badge ID: <input name="uid"><br>
-        Shift:
+        <input name="name" placeholder="Name">
+        <input name="uid" placeholder="ID">
         <select name="shift">
             <option>Day</option>
             <option>Night</option>
-        </select><br>
-        <button name="action" value="add">Add User</button>
+        </select>
+        <button name="action" value="add">Add</button>
     </form>
+</div>
 
+<div class="section">
     <h3>Remove User</h3>
     <form method="post">
-        Badge ID: <input name="uid">
+        <input name="uid" placeholder="ID">
         <button name="action" value="remove">Remove</button>
     </form>
+</div>
 
-    <h3>Mark Attendance</h3>
-    <form method="post">
-        Badge ID: <input name="uid">
-        <button name="action" value="attendance">Scan</button>
-    </form>
-
-    <h3>Export</h3>
+<div class="section">
     <form method="post">
         <button name="action" value="export">Download Excel</button>
     </form>
+</div>
 
-    <p><b>{{message}}</b></p>
-    """ , message=message)
+<table>
+<tr><th>ID</th><th>Name</th><th>Shift</th><th>Status</th></tr>
+
+{% for u in data %}
+<tr>
+<td>{{u[0]}}</td>
+<td>{{u[1]}}</td>
+<td>{{u[2]}}</td>
+<td>
+{% if u[3] == '1' %}
+<span style="color:green">Present</span>
+{% elif u[3] == 'OT' %}
+<span style="color:orange">OT</span>
+{% elif u[3] == 'OFF' %}
+<span style="color:gray">OFF</span>
+{% else %}
+<span style="color:red">NI</span>
+{% endif %}
+</td>
+</tr>
+{% endfor %}
+</table>
+
+<h3>{{message}}</h3>
+
+</body>
+</html>
+""", data=data, summary=summary, message=message)
 
 
 # -----------------------------
 # RUN
 # -----------------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(debug=True)
