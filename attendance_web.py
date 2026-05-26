@@ -70,12 +70,15 @@ def auto_mark_status():
         exists = c.fetchone()
 
         if not exists:
-            if today_day in TEAM_SCHEDULEstatus = "NI"   # Working day but no scan
+            # ✅ FIXED LINE
+            if today_day in TEAM_SCHEDULE[team] = "NI"   # Working day but no scan
             else:
                 status = "OFF"  # Not working day
 
-            c.execute("INSERT INTO attendance VALUES (?, ?, ?, ?)",
-                      (uid, today, today_day, status))
+            c.execute(
+                "INSERT INTO attendance VALUES (?, ?, ?, ?)",
+                (uid, today, today_day, status)
+            )
 
     conn.commit()
     conn.close()
