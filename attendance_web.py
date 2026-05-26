@@ -7,7 +7,7 @@ app = Flask(__name__)
 
 DB_NAME = "attendance.db"
 
-# ✅ TEAM-BASED SCHEDULE (FIXED)
+# ✅ TEAM-BASED SCHEDULE
 TEAM_SCHEDULE = {
     "A": ["Sunday", "Monday", "Tuesday", "Wednesday"],
     "B": ["Wednesday", "Thursday", "Friday", "Saturday"],
@@ -75,11 +75,11 @@ def add_user(name, uid, shift, team):
     try:
         c.execute("INSERT INTO users VALUES (?, ?, ?, ?)", (uid, name, shift, team))
         conn.commit()
-        msg = "✅ User added"
+        return "✅ User added"
     except:
-        msg = "❌ User already exists"
-    conn.close()
-    return msg
+        return "❌ User already exists"
+    finally:
+        conn.close()
 
 
 # -----------------------------
@@ -95,7 +95,7 @@ def remove_user(uid):
 
 
 # -----------------------------
-# AUTO OFF / NI (TEAM LOGIC)
+# AUTO OFF / NI
 # -----------------------------
 def auto_mark_absent(selected_date):
     dt = datetime.strptime(selected_date, "%Y-%m-%d")
@@ -109,7 +109,7 @@ def auto_mark_absent(selected_date):
 
     for u in users:
         uid = u[0]
-        team = u[3]   # ✅ USE TEAM
+        team = u[3]
 
         c.execute("SELECT * FROM attendance WHERE id=? AND date=?", (uid, selected_date))
         record = c.fetchone()
@@ -178,7 +178,7 @@ def mark_attendance(uid):
 
 
 # -----------------------------
-# EXPORT EXCEL (FULL REPORT)
+# EXPORT EXCEL
 # -----------------------------
 def export_excel():
     conn = sqlite3.connect(DB_NAME)
@@ -189,4 +189,12 @@ def export_excel():
     def format_excel_date(date_str):
         dt = datetime.strptime(date_str, "%Y-%m-%d")
         return f"{dt.strftime('%a')} {dt.day}/{dt.month}"
+
+    att_df["Date"] = att_df["date"].apply(format_excel_date)
+
+    merged_df = att_df.merge(users_df, on="id", how="left")
+
+    merged_df = merged_df[
+        ["id", "name", "team", "shift", "Date", "status"]
+    ]
 
