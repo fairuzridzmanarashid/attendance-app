@@ -70,9 +70,9 @@ def auto_mark_status():
         exists = c.fetchone()
 
         if not exists:
-            if today_day in TEAM_SCHEDULEstatus = "NI"   # Not scanned but should work
+            if today_day in TEAM_SCHEDULEstatus = "NI"   # Working day but no scan
             else:
-                status = "OFF"  # Not working
+                status = "OFF"  # Not working day
 
             c.execute("INSERT INTO attendance VALUES (?, ?, ?, ?)",
                       (uid, today, today_day, status))
@@ -124,18 +124,18 @@ def mark_attendance(uid):
 
     team = user[0]
 
-    # Determine scan result
+    # Determine status
     if today_day in TEAM_SCHEDULEnew_status = "1"
     else:
         new_status = "OT"
 
-    # Check existing
+    # Check if already exists
     c.execute("SELECT status FROM attendance WHERE id=? AND date=?", (uid, today))
     existing = c.fetchone()
 
     if existing:
         c.execute("""
-            UPDATE attendance 
+            UPDATE attendance
             SET status=?
             WHERE id=? AND date=?
         """, (new_status, uid, today))
@@ -165,12 +165,12 @@ def export_excel():
     ws = writer.sheets["Users"]
 
     for col in ws.columns:
-        max_length = 0
+        max_len = 0
         col_letter = col[0].column_letter
         for cell in col:
             if cell.value:
-                max_length = max(max_length, len(str(cell.value)))
-        ws.column_dimensions[col_letter].width = max_length + 2
+                max_len = max(max_len, len(str(cell.value)))
+        ws.column_dimensions[col_letter].width = max_len + 2
 
     writer.close()
     return file_path
@@ -187,7 +187,7 @@ def get_users():
     return data
 
 # -----------------------------
-# DASHBOARD COUNT
+# SUMMARY
 # -----------------------------
 def get_summary():
     today, _ = get_today()
@@ -210,7 +210,7 @@ def get_summary():
 # -----------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
-    auto_mark_status()  # ✅ Important
+    auto_mark_status()  # ✅ critical
 
     message = ""
     today, day = get_today()
@@ -237,23 +237,14 @@ def index():
     html = """
     <style>
     body { font-family: Segoe UI; background:#f3f2f1; }
-    .card {
-        background:white; padding:20px; margin:15px;
-        border-radius:10px; box-shadow:0 2px 6px rgba(0,0,0,0.1);
-    }
+    .card { background:white; padding:20px; margin:15px; border-radius:10px; box-shadow:0 2px 6px rgba(0,0,0,0.1);}
     .grid { display:flex; flex-wrap:wrap; }
-    .tile {
-        flex:1; margin:10px; padding:20px; border-radius:10px;
-        color:white; text-align:center; font-size:20px;
-    }
+    .tile { flex:1; margin:10px; padding:20px; border-radius:10px; color:white; text-align:center; }
     .present { background:#107C10; }
     .ot { background:#FF8C00; }
     .off { background:#605E5C; }
     .ni { background:#D13438; }
-    button {
-        background:#0078D4; color:white; border:none;
-        padding:10px; border-radius:5px;
-    }
+    button { background:#0078D4; color:white; border:none; padding:10px; border-radius:5px; }
     input, select { padding:8px; margin:5px; width:90%; }
     </style>
 
@@ -270,8 +261,8 @@ def index():
     <div class="card">
         <h3>Add User</h3>
         <form method="POST">
-            <input name="name" placeholder="Name">
-            <input name="id" placeholder="ID Badge">
+            <input name="name" placeholder="Name" required>
+            <input name="id" placeholder="ID Badge" required>
             <select name="team">
                 <option>A</option><option>B</option><option>C</option>
             </select>
@@ -282,7 +273,7 @@ def index():
     <div class="card">
         <h3>Remove User</h3>
         <form method="POST">
-            <input name="id" placeholder="ID Badge">
+            <input name="id" placeholder="ID Badge" required>
             <button name="action" value="remove">Remove</button>
         </form>
     </div>
@@ -290,7 +281,7 @@ def index():
     <div class="card">
         <h3>Scan Attendance</h3>
         <form method="POST">
-            <input name="id" placeholder="Scan ID">
+            <input name="id" placeholder="Scan ID" required>
             <button name="action" value="mark">Scan</button>
         </form>
     </div>
