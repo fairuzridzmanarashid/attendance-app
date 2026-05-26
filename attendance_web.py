@@ -2,7 +2,6 @@ from flask import Flask, request, render_template_string, send_file
 import sqlite3
 from datetime import datetime
 import pandas as pd
-import os
 
 app = Flask(__name__)
 
@@ -54,6 +53,11 @@ def get_today():
     return now.strftime("%Y-%m-%d"), now.strftime("%A")
 
 
+def format_date(date_str):
+    dt = datetime.strptime(date_str, "%Y-%m-%d")
+    return f"{dt.strftime('%a')} {dt.day}/{dt.month}"
+
+
 def get_user(uid):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -98,8 +102,9 @@ def remove_user(uid):
 # -----------------------------
 # AUTO OFF / NI
 # -----------------------------
-def auto_mark_absent():
-    today_date, today_day = get_today()
+def auto_mark_absent(selected_date):
+    dt = datetime.strptime(selected_date, "%Y-%m-%d")
+    today_day = dt.strftime("%A")
 
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -111,7 +116,7 @@ def auto_mark_absent():
         uid = u[0]
         shift = u[2]
 
-        c.execute("SELECT * FROM attendance WHERE id=? AND date=?", (uid, today_date))
+        c.execute("SELECT * FROM attendance WHERE id=? AND date=?", (uid, selected_date))
         record = c.fetchone()
 
         if not record:
@@ -124,7 +129,7 @@ def auto_mark_absent():
 
             c.execute(
                 "INSERT INTO attendance VALUES (?, ?, ?)",
-                (uid, today_date, status)
+                (uid, selected_date, status)
             )
 
     conn.commit()
@@ -152,24 +157,14 @@ def mark_attendance(uid):
     working_days = TEAM_SCHEDULE[shift]
 
     if record:
-        # OFF → OT
         if record[2] == "OFF":
-            c.execute("""
-                UPDATE attendance SET status='OT'
-                WHERE id=? AND date=?
-            """, (uid, today_date))
-
+            c.execute("UPDATE attendance SET status='OT' WHERE id=? AND date=?", (uid, today_date))
             conn.commit()
             conn.close()
-            return f"🔥 OT recorded (OFF day): {user[1]}"
+            return f"🔥 OT recorded: {user[1]}"
 
-        # NI → Present
         elif record[2] == "NI":
-            c.execute("""
-                UPDATE attendance SET status='1'
-                WHERE id=? AND date=?
-            """, (uid, today_date))
-
+            c.execute("UPDATE attendance SET status='1' WHERE id=? AND date=?", (uid, today_date))
             conn.commit()
             conn.close()
             return f"✅ Present: {user[1]}"
@@ -178,17 +173,12 @@ def mark_attendance(uid):
             conn.close()
             return "⚠️ Already recorded"
 
-    # fallback (safety)
     if today_day in working_days:
         status = "1"
     else:
         status = "OT"
 
-    c.execute(
-        "INSERT INTO attendance VALUES (?, ?, ?)",
-        (uid, today_date, status)
-    )
-
+    c.execute("INSERT INTO attendance VALUES (?, ?, ?)", (uid, today_date, status))
     conn.commit()
     conn.close()
 
@@ -221,7 +211,12 @@ def export_excel():
 def index():
     message = ""
 
-    auto_mark_absent()
+    selected_date = request.form.get("date")
+
+    if not selected_date:
+        selected_date, _ = get_today()
+
+    auto_mark_absent(selected_date)
 
     if request.method == "POST":
         action = request.form.get("action")
@@ -247,14 +242,12 @@ def index():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
-    today, _ = get_today()
-
     c.execute("""
         SELECT u.id, u.name, u.shift, u.team, a.status
         FROM users u
         LEFT JOIN attendance a
         ON u.id = a.id AND a.date = ?
-    """, (today,))
+    """, (selected_date,))
 
     data = c.fetchall()
 
@@ -266,6 +259,8 @@ def index():
             summary[status] += 1
 
     conn.close()
+
+    display_date = format_date(selected_date)
 
     return render_template_string("""
 <html>
@@ -318,7 +313,14 @@ th, td {
 
 <body>
 
-<h2>📊 Attendance Dashboard</h2>
+<h2>📊 Attendance Dashboard ({{display_date}})</h2>
+
+<div class="section">
+    <form method="post">
+        <input type="date" name="date" value="{{selected_date}}">
+        <button type="submit">View</button>
+    </form>
+</div>
 
 <div class="grid">
     <div class="card present">Present<br>{{summary['1']}}</div>
@@ -330,7 +332,7 @@ th, td {
 <div class="section">
     <h3>Scan Attendance</h3>
     <form method="post">
-        <input name="uid" placeholder="Enter ID">
+        <input name="uid" placeholder="ID">
         <button name="action" value="attendance">Submit</button>
     </form>
 </div>
@@ -397,7 +399,8 @@ th, td {
 
 </body>
 </html>
-""", data=data, summary=summary, message=message)
+""", data=data, summary=summary, message=message,
+       selected_date=selected_date, display_date=display_date)
 
 
 # -----------------------------
