@@ -197,3 +197,107 @@ def index():
         border-radius:8px; font-size:18px;
     }
 
+    button { background:#0078D4; color:white; border:none; }
+
+    .stats {
+        display:flex; justify-content:space-between;
+        text-align:center;
+    }
+
+    .stat-box {
+        flex:1; padding:15px; margin:5px;
+        background:#0078D4; color:white; border-radius:10px;
+        font-size:20px;
+    }
+
+    table {
+        width:100%; border-collapse:collapse;
+    }
+
+    th, td {
+        padding:10px; border-bottom:1px solid #ddd;
+    }
+    </style>
+
+    <div class="container">
+
+        <div class="card">
+            <h2>📅 {{today}} ({{today_day}})</h2>
+            <p style="color:green;">{{message}}</p>
+        </div>
+
+        <div class="card stats">
+            <div class="stat-box">✅ Present<br>{{present}}</div>
+            <div class="stat-box">🏖 OFF<br>{{off}}</div>
+            <div class="stat-box">👥 Total<br>{{total}}</div>
+            <div class="stat-box">⏳ Not Marked<br>{{not_marked}}</div>
+        </div>
+
+        <div class="card">
+            export">
+                <button>⬇ Export Excel</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h3>Mark Attendance</h3>
+            <form method="POST">
+                <input name="uid" placeholder="ID Badge" required>
+                <button name="action" value="mark">Submit</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h3>Add User</h3>
+            <form method="POST">
+                <input name="name" placeholder="Name" required>
+                <input name="uid" placeholder="ID Badge" required>
+                <select name="team">
+                    <option>A</option>
+                    <option>B</option>
+                    <option>C</option>
+                </select>
+                <button name="action" value="add">Add User</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h3>Remove User</h3>
+            <form method="POST">
+                <input name="uid" placeholder="ID Badge" required>
+                <button name="action" value="remove">Remove</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h3>Records</h3>
+            <table>
+                <tr><th>Name</th><th>ID</th><th>Date</th><th>Status</th></tr>
+                {% for r in data %}
+                <tr>
+                    <td>{{r[0]}}</td>
+                    <td>{{r[1]}}</td>
+                    <td>{{r[2]}}</td>
+                    <td>{{r[3]}}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+
+    </div>
+    """
+
+    return render_template_string(html,
+        today=today,
+        today_day=today_day,
+        data=data,
+        message=message,
+        present=present,
+        off=off,
+        total=total,
+        not_marked=not_marked
+    )
+
+# ✅ RUN
+if __name__ == "__main__":
+    app.run(debug=True)
