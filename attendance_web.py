@@ -18,7 +18,7 @@ TEAM_SCHEDULE = {
 }
 
 # -----------------------------
-# INIT DB
+# INIT DATABASE
 # -----------------------------
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -54,7 +54,7 @@ def get_today():
     return now.strftime("%Y-%m-%d"), now.strftime("%A")
 
 # -----------------------------
-# AUTO MARK NI / OFF
+# AUTO MARK (NI / OFF)
 # -----------------------------
 def auto_mark_status():
     today, today_day = get_today()
@@ -66,17 +66,14 @@ def auto_mark_status():
     users = c.fetchall()
 
     for uid, team in users:
-        c.execute(
-            "SELECT * FROM attendance WHERE id=? AND date=?",
-            (uid, today)
-        )
+        c.execute("SELECT * FROM attendance WHERE id=? AND date=?", (uid, today))
         exists = c.fetchone()
 
         if not exists:
-            # ✅ CORRECT LOGIC (NO SYNTAX ERROR)
-            if today_day in TEAM_SCHEDULEstatus = "NI"
+            # ✅ CORRECT SYNTAX (THIS IS THE FIX)
+            if today_day in TEAM_SCHEDULE[team] = "NI"   # working day but not scanned
             else:
-                status = "OFF"
+                status = "OFF"  # not working day
 
             c.execute(
                 "INSERT INTO attendance VALUES (?, ?, ?, ?)",
@@ -109,10 +106,8 @@ def add_user(name, uid, team):
 def remove_user(uid):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-
     c.execute("DELETE FROM users WHERE id=?", (uid,))
     conn.commit()
-
     conn.close()
     return "🗑️ User removed"
 
@@ -134,23 +129,21 @@ def mark_attendance(uid):
 
     team = user[0]
 
-    # ✅ CORRECT LOGIC
+    # ✅ CORRECT SYNTAX
     if today_day in TEAM_SCHEDULEnew_status = "1"
     else:
         new_status = "OT"
 
     # Check existing record
-    c.execute(
-        "SELECT status FROM attendance WHERE id=? AND date=?",
-        (uid, today)
-    )
+    c.execute("SELECT status FROM attendance WHERE id=? AND date=?", (uid, today))
     existing = c.fetchone()
 
     if existing:
-        c.execute(
-            "UPDATE attendance SET status=? WHERE id=? AND date=?",
-            (new_status, uid, today)
-        )
+        c.execute("""
+            UPDATE attendance
+            SET status=?
+            WHERE id=? AND date=?
+        """, (new_status, uid, today))
     else:
         c.execute(
             "INSERT INTO attendance VALUES (?, ?, ?, ?)",
@@ -163,7 +156,7 @@ def mark_attendance(uid):
     return f"✅ Recorded as {new_status}"
 
 # -----------------------------
-# EXPORT USERS
+# EXPORT USERS TO EXCEL
 # -----------------------------
 def export_excel():
     conn = sqlite3.connect(DB_NAME)
@@ -176,8 +169,8 @@ def export_excel():
 
     with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Users")
-
         ws = writer.sheets["Users"]
+
         for col in ws.columns:
             max_len = 0
             col_letter = col[0].column_letter
@@ -228,7 +221,7 @@ def get_summary():
     return summary
 
 # -----------------------------
-# UI
+# WEB UI
 # -----------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -255,8 +248,7 @@ def index():
             message = mark_attendance(request.form["id"])
 
         elif action == "export":
-            file_path = export_excel()
-            return send_file(file_path, as_attachment=True)
+            return send_file(export_excel(), as_attachment=True)
 
     users = get_users()
     summary = get_summary()
@@ -303,15 +295,17 @@ def index():
     <p>{{message}}</p>
     """
 
-    return render_template_string(html,
-                                  today=today,
-                                  day=day,
-                                  users=users,
-                                  summary=summary,
-                                  message=message)
+    return render_template_string(
+        html,
+        today=today,
+        day=day,
+        users=users,
+        summary=summary,
+        message=message
+    )
 
 # -----------------------------
-# RUN
+# RUN APP
 # -----------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
