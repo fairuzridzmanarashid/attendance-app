@@ -1,8 +1,8 @@
 from flask import Flask, request, render_template_string, send_file, redirect
 import sqlite3
 from datetime import datetime
-import os
 import pandas as pd
+from io import BytesIO
 
 app = Flask(__name__)
 
@@ -15,13 +15,12 @@ TEAM_SCHEDULE = {
 }
 
 # -----------------------------
-# INIT DATABASE
+# INIT DB
 # -----------------------------
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
-    # attendance table
     c.execute("""
         CREATE TABLE IF NOT EXISTS attendance (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,7 +29,6 @@ def init_db():
         )
     """)
 
-    # users table ✅ NEW
     c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
@@ -45,22 +43,22 @@ def init_db():
 init_db()
 
 # -----------------------------
-# DATE FORMAT ✅ dd/mm/yy
+# DATE FORMAT ✅
 # -----------------------------
 def get_today():
     now = datetime.now()
     return now.strftime("%d/%m/%y"), now.strftime("%A")
 
 # -----------------------------
-# USER FUNCTIONS ✅ NEW
+# USERS
 # -----------------------------
 def get_users():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute("SELECT id, name, team FROM users")
-    users = [{"id": r[0], "name": r[1], "team": r[2]} for r in c.fetchall()]
+    data = [{"id": r[0], "name": r[1], "team": r[2]} for r in c.fetchall()]
     conn.close()
-    return users
+    return data
 
 def add_user(uid, name, team):
     conn = sqlite3.connect(DB_NAME)
@@ -82,10 +80,10 @@ def delete_user(uid):
 def find_user(uid):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    c.execute("SELECT id, name, team FROM users WHERE id=?", (uid,))
+    c.execute("SELECT id FROM users WHERE id=?", (uid,))
     row = c.fetchone()
     conn.close()
-    return {"id": row[0], "name": row[1], "team": row[2]} if row else None
+    return row is not None
 
 # -----------------------------
 # ATTENDANCE
@@ -106,7 +104,7 @@ def mark_attendance(uid):
     return "Scan successful"
 
 # -----------------------------
-# DASHBOARD ✅ OT / NI LOGIC
+# DASHBOARD (✅ OT / NI)
 # -----------------------------
 def get_dashboard():
     today, today_day = get_today()
@@ -148,21 +146,23 @@ def get_dashboard():
     return result
 
 # -----------------------------
-# EXPORT ✅ GUARANTEED WORKING
+# ✅ EXPORT EXCEL (FINAL FIX)
 # -----------------------------
 @app.route("/export")
 def export_excel():
     data = get_dashboard()
     df = pd.DataFrame(data)
 
+    output = BytesIO()
+    df.to_excel(output, index=False)
+    output.seek(0)
+
     filename = f"attendance_{datetime.now().strftime('%d%m%y')}.xlsx"
-    filepath = os.path.join(os.getcwd(), filename)
 
-    df.to_excel(filepath, index=False)
-
-    return send_file(filepath,
+    return send_file(output,
                      as_attachment=True,
-                     download_name=filename)
+                     download_name=filename,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # -----------------------------
 # MAIN PAGE
@@ -260,14 +260,15 @@ def index():
             {% endfor %}
         </table>
 
-        <br>
+        <br><br>
 
-        <!-- ✅ REAL WORKING BUTTON -->
+        <!-- ✅ FINAL WORKING BUTTON -->
         /export
             <button class="btn">⬇ Export Excel</button>
-        </form>
+        </a>
 
     </div>
+
     </body>
     </html>
     """, data=data, message=message, today=today, today_day=today_day)
