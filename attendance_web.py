@@ -20,9 +20,6 @@ EMPLOYEES = [
     {"id": "7363", "team": "C"}
 ]
 
-# -----------------------------
-# TEAM SCHEDULE
-# -----------------------------
 TEAM_SCHEDULE = {
     "A": ["Sunday", "Monday", "Tuesday", "Wednesday"],
     "B": ["Wednesday", "Thursday", "Friday", "Saturday"],
@@ -31,14 +28,12 @@ TEAM_SCHEDULE = {
 
 DB_NAME = "attendance.db"
 
-
 # -----------------------------
-# DATABASE INIT
+# INIT DB
 # -----------------------------
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-
     c.execute("""
         CREATE TABLE IF NOT EXISTS attendance (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,13 +41,10 @@ def init_db():
             date TEXT
         )
     """)
-
     conn.commit()
     conn.close()
 
-
 init_db()
-
 
 # -----------------------------
 # HELPERS
@@ -61,25 +53,18 @@ def get_today():
     now = datetime.now()
     return now.strftime("%Y-%m-%d"), now.strftime("%A")
 
-
 def find_user(uid):
-    for u in EMPLOYEES:
-        if u["id"] == uid:
-            return u
-    return None
-
+    return next((u for u in EMPLOYEES if u["id"] == uid), None)
 
 # -----------------------------
 # MARK ATTENDANCE
 # -----------------------------
 def mark_attendance(uid):
     today, _ = get_today()
-
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
-    # Prevent duplicate scan
-    c.execute("SELECT * FROM attendance WHERE user_id=? AND date=?", (uid, today))
+    c.execute("SELECT 1 FROM attendance WHERE user_id=? AND date=?", (uid, today))
     if c.fetchone():
         conn.close()
         return "Already scanned"
@@ -89,9 +74,8 @@ def mark_attendance(uid):
     conn.close()
     return "Scan successful"
 
-
 # -----------------------------
-# DASHBOARD LOGIC (OT + NI ADDED)
+# DASHBOARD (WITH OT + NI)
 # -----------------------------
 def get_dashboard():
     today, today_day = get_today()
@@ -105,19 +89,17 @@ def get_dashboard():
         uid = user["id"]
         team = user["team"]
 
-        working_days = TEAM_SCHEDULE.get(team, [])
-        is_working_day = today_day in working_days
+        working_days = TEAM_SCHEDULE[team]
+        is_working = today_day in working_days
 
-        # Check scanned
         c.execute("SELECT 1 FROM attendance WHERE user_id=? AND date=?", (uid, today))
         scanned = c.fetchone() is not None
 
-        # ✅ FINAL STATUS RULE
-        if is_working_day and scanned:
+        if is_working and scanned:
             status = "1"
-        elif not is_working_day and scanned:
+        elif not is_working and scanned:
             status = "OT"
-        elif is_working_day and not scanned:
+        elif is_working and not scanned:
             status = "NI"
         else:
             status = "OFF"
@@ -125,42 +107,42 @@ def get_dashboard():
         result.append({
             "id": uid,
             "team": team,
+            "date": today,
+            "day": today_day,
             "status": status
         })
 
     conn.close()
     return result
 
-
 # -----------------------------
 # SUMMARY
 # -----------------------------
 def get_summary(data):
-    summary = {"1": 0, "OT": 0, "OFF": 0, "NI": 0}
-
-    for row in data:
-        summary[row["status"]] += 1
-
+    summary = {"1":0, "OT":0, "NI":0, "OFF":0}
+    for r in data:
+        summary[r["status"]] += 1
     return summary
 
-
 # -----------------------------
-# EXPORT EXCEL ✅ FIXED
+# ✅ EXPORT EXCEL (FIXED 100%)
 # -----------------------------
 @app.route("/export")
 def export_excel():
     data = get_dashboard()
-
     df = pd.DataFrame(data)
 
-    file_path = "attendance_export.xlsx"
-    df.to_excel(file_path, index=False)
+    # Add filename with date
+    today = datetime.now().strftime("%Y%m%d")
+    filename = f"attendance_{today}.xlsx"
 
-    return send_file(file_path, as_attachment=True)
+    filepath = os.path.join(os.getcwd(), filename)
+    df.to_excel(filepath, index=False)
 
+    return send_file(filepath, as_attachment=True)
 
 # -----------------------------
-# WEB UI
+# WEB UI (✅ FIXED BUTTON + GUI)
 # -----------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -168,62 +150,88 @@ def index():
 
     if request.method == "POST":
         uid = request.form.get("uid")
-        user = find_user(uid)
-
-        if user:
+        if find_user(uid):
             message = mark_attendance(uid)
         else:
             message = "Invalid ID"
 
     data = get_dashboard()
     summary = get_summary(data)
+    today, today_day = get_today()
 
     return render_template_string("""
-    <h2>Attendance System</h2>
+    <html>
+    <head>
+        <title>Attendance System</title>
+        <style>
+            body { font-family: Arial; text-align: center; background:#f5f5f5; }
+            .box { background:white; padding:20px; margin:20px auto; width:80%; border-radius:10px; }
+            table { border-collapse: collapse; width:100%; }
+            th, td { padding:10px; border:1px solid #ddd; }
+            th { background:#007BFF; color:white; }
+            .btn { padding:12px 25px; background:#007BFF; color:white; border:none; border-radius:8px; font-size:16px; cursor:pointer; }
+            .btn:hover { background:#0056b3; }
+        </style>
+    </head>
 
-    <form method="POST">
-        <input name="uid" placeholder="Scan ID" required>
-        <button type="submit">Submit</button>
-    </form>
+    <body>
 
-    <p>{{message}}</p>
+    <div class="box">
+        <h2>Attendance System</h2>
+        <h4>{{today}} ({{today_day}})</h4>
 
-    <h3>Summary</h3>
-    <ul>
-        <li>Present (1): {{summary["1"]}}</li>
-        <li>OT: {{summary["OT"]}}</li>
-        <li>NI: {{summary["NI"]}}</li>
-        <li>OFF: {{summary["OFF"]}}</li>
-    </ul>
+        <form method="POST">
+            <input name="uid" placeholder="Scan ID" required>
+            <button class="btn">Submit</button>
+        </form>
 
-    <h3>Dashboard</h3>
-    <table border="1" cellpadding="5">
-        <tr>
-            <th>ID</th>
-            <th>Team</th>
-            <th>Status</th>
-        </tr>
-        {% for row in data %}
-        <tr>
-            <td>{{row.id}}</td>
-            <td>{{row.team}}</td>
-            <td>{{row.status}}</td>
-        </tr>
-        {% endfor %}
-    </table>
+        <p><b>{{message}}</b></p>
 
-    <br>
-    /export
-        <button style="padding:10px 20px; font-size:16px;">
-            ⬇ Export Excel
-        </button>
-    </a>
-    """, message=message, data=data, summary=summary)
+        <h3>Summary</h3>
+        <p>
+            1: {{summary["1"]}} |
+            OT: {{summary["OT"]}} |
+            NI: {{summary["NI"]}} |
+            OFF: {{summary["OFF"]}}
+        </p>
 
+        <h3>Dashboard</h3>
+        <table>
+            <tr>
+                <th>ID</th>
+                <th>Team</th>
+                <th>Date</th>
+                <th>Day</th>
+                <th>Status</th>
+            </tr>
+
+            {% for r in data %}
+            <tr>
+                <td>{{r.id}}</td>
+                <td>{{r.team}}</td>
+                <td>{{r.date}}</td>
+                <td>{{r.day}}</td>
+                <td><b>{{r.status}}</b></td>
+            </tr>
+            {% endfor %}
+        </table>
+
+        <br><br>
+
+        <!-- ✅ FIXED EXPORT BUTTON -->
+        /export
+            <button class="btn">⬇ Export Excel</button>
+        </a>
+
+    </div>
+
+    </body>
+    </html>
+    """, message=message, data=data, summary=summary, today=today, today_day=today_day)
 
 # -----------------------------
 # RUN
 # -----------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, debug=True)
