@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template_string, send_file
+from flask import Flask, request, render_template_string, send_file, redirect
 import sqlite3
 from datetime import datetime
 import os
@@ -6,19 +6,7 @@ import pandas as pd
 
 app = Flask(__name__)
 
-# -----------------------------
-# EMPLOYEES
-# -----------------------------
-EMPLOYEES = [
-    {"id": "16320", "team": "A"},
-    {"id": "7274", "team": "A"},
-    {"id": "20346", "team": "A"},
-    {"id": "7333", "team": "B"},
-    {"id": "15766", "team": "B"},
-    {"id": "19555", "team": "B"},
-    {"id": "7370", "team": "C"},
-    {"id": "7363", "team": "C"}
-]
+DB_NAME = "attendance.db"
 
 TEAM_SCHEDULE = {
     "A": ["Sunday", "Monday", "Tuesday", "Wednesday"],
@@ -26,14 +14,14 @@ TEAM_SCHEDULE = {
     "C": ["Monday", "Tuesday", "Thursday", "Friday"]
 }
 
-DB_NAME = "attendance.db"
-
 # -----------------------------
-# INIT DB
+# INIT DATABASE
 # -----------------------------
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
+
+    # attendance table
     c.execute("""
         CREATE TABLE IF NOT EXISTS attendance (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,23 +29,66 @@ def init_db():
             date TEXT
         )
     """)
+
+    # users table ✅ NEW
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            team TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
 
 init_db()
 
 # -----------------------------
-# HELPERS
+# DATE FORMAT ✅ dd/mm/yy
 # -----------------------------
 def get_today():
     now = datetime.now()
-    return now.strftime("%Y-%m-%d"), now.strftime("%A")
-
-def find_user(uid):
-    return next((u for u in EMPLOYEES if u["id"] == uid), None)
+    return now.strftime("%d/%m/%y"), now.strftime("%A")
 
 # -----------------------------
-# MARK ATTENDANCE
+# USER FUNCTIONS ✅ NEW
+# -----------------------------
+def get_users():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT id, name, team FROM users")
+    users = [{"id": r[0], "name": r[1], "team": r[2]} for r in c.fetchall()]
+    conn.close()
+    return users
+
+def add_user(uid, name, team):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    try:
+        c.execute("INSERT INTO users VALUES (?, ?, ?)", (uid, name, team))
+        conn.commit()
+    except:
+        pass
+    conn.close()
+
+def delete_user(uid):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("DELETE FROM users WHERE id=?", (uid,))
+    conn.commit()
+    conn.close()
+
+def find_user(uid):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT id, name, team FROM users WHERE id=?", (uid,))
+    row = c.fetchone()
+    conn.close()
+    return {"id": row[0], "name": row[1], "team": row[2]} if row else None
+
+# -----------------------------
+# ATTENDANCE
 # -----------------------------
 def mark_attendance(uid):
     today, _ = get_today()
@@ -75,37 +106,38 @@ def mark_attendance(uid):
     return "Scan successful"
 
 # -----------------------------
-# DASHBOARD (WITH OT + NI)
+# DASHBOARD ✅ OT / NI LOGIC
 # -----------------------------
 def get_dashboard():
     today, today_day = get_today()
+    users = get_users()
 
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
     result = []
 
-    for user in EMPLOYEES:
-        uid = user["id"]
-        team = user["team"]
+    for u in users:
+        uid = u["id"]
+        team = u["team"]
 
-        working_days = TEAM_SCHEDULE[team]
-        is_working = today_day in working_days
+        working = today_day in TEAM_SCHEDULE.get(team, [])
 
         c.execute("SELECT 1 FROM attendance WHERE user_id=? AND date=?", (uid, today))
         scanned = c.fetchone() is not None
 
-        if is_working and scanned:
+        if working and scanned:
             status = "1"
-        elif not is_working and scanned:
+        elif not working and scanned:
             status = "OT"
-        elif is_working and not scanned:
+        elif working and not scanned:
             status = "NI"
         else:
             status = "OFF"
 
         result.append({
             "id": uid,
+            "name": u["name"],
             "team": team,
             "date": today,
             "day": today_day,
@@ -116,62 +148,65 @@ def get_dashboard():
     return result
 
 # -----------------------------
-# SUMMARY
-# -----------------------------
-def get_summary(data):
-    summary = {"1":0, "OT":0, "NI":0, "OFF":0}
-    for r in data:
-        summary[r["status"]] += 1
-    return summary
-
-# -----------------------------
-# ✅ EXPORT EXCEL (FIXED 100%)
+# EXPORT ✅ GUARANTEED WORKING
 # -----------------------------
 @app.route("/export")
 def export_excel():
     data = get_dashboard()
     df = pd.DataFrame(data)
 
-    # Add filename with date
-    today = datetime.now().strftime("%Y%m%d")
-    filename = f"attendance_{today}.xlsx"
-
+    filename = f"attendance_{datetime.now().strftime('%d%m%y')}.xlsx"
     filepath = os.path.join(os.getcwd(), filename)
+
     df.to_excel(filepath, index=False)
 
-    return send_file(filepath, as_attachment=True)
+    return send_file(filepath,
+                     as_attachment=True,
+                     download_name=filename)
 
 # -----------------------------
-# WEB UI (✅ FIXED BUTTON + GUI)
+# MAIN PAGE
 # -----------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
     message = ""
 
     if request.method == "POST":
-        uid = request.form.get("uid")
-        if find_user(uid):
-            message = mark_attendance(uid)
-        else:
-            message = "Invalid ID"
+        action = request.form.get("action")
+
+        if action == "scan":
+            uid = request.form.get("uid")
+            if find_user(uid):
+                message = mark_attendance(uid)
+            else:
+                message = "User not found"
+
+        elif action == "add":
+            add_user(
+                request.form.get("new_id"),
+                request.form.get("name"),
+                request.form.get("team")
+            )
+            return redirect("/")
+
+        elif action == "delete":
+            delete_user(request.form.get("del_id"))
+            return redirect("/")
 
     data = get_dashboard()
-    summary = get_summary(data)
     today, today_day = get_today()
 
     return render_template_string("""
     <html>
     <head>
-        <title>Attendance System</title>
-        <style>
-            body { font-family: Arial; text-align: center; background:#f5f5f5; }
-            .box { background:white; padding:20px; margin:20px auto; width:80%; border-radius:10px; }
-            table { border-collapse: collapse; width:100%; }
-            th, td { padding:10px; border:1px solid #ddd; }
-            th { background:#007BFF; color:white; }
-            .btn { padding:12px 25px; background:#007BFF; color:white; border:none; border-radius:8px; font-size:16px; cursor:pointer; }
-            .btn:hover { background:#0056b3; }
-        </style>
+    <style>
+    body { font-family: Arial; background:#f2f2f2; text-align:center; }
+    .box { background:white; padding:20px; margin:20px auto; width:85%; border-radius:10px; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { padding:10px; border:1px solid #ddd; }
+    th { background:#007BFF; color:white; }
+    .btn { padding:10px 20px; background:#007BFF; color:white; border:none; border-radius:6px; cursor:pointer; }
+    </style>
     </head>
 
     <body>
@@ -180,25 +215,33 @@ def index():
         <h2>Attendance System</h2>
         <h4>{{today}} ({{today_day}})</h4>
 
+        <h3>Scan</h3>
         <form method="POST">
-            <input name="uid" placeholder="Scan ID" required>
-            <button class="btn">Submit</button>
+            <input name="uid" placeholder="Scan ID">
+            <button class="btn" name="action" value="scan">Submit</button>
         </form>
 
-        <p><b>{{message}}</b></p>
+        <p>{{message}}</p>
 
-        <h3>Summary</h3>
-        <p>
-            1: {{summary["1"]}} |
-            OT: {{summary["OT"]}} |
-            NI: {{summary["NI"]}} |
-            OFF: {{summary["OFF"]}}
-        </p>
+        <h3>Add User</h3>
+        <form method="POST">
+            <input name="new_id" placeholder="ID" required>
+            <input name="name" placeholder="Name" required>
+            <input name="team" placeholder="Team (A/B/C)" required>
+            <button class="btn" name="action" value="add">Add</button>
+        </form>
+
+        <h3>Remove User</h3>
+        <form method="POST">
+            <input name="del_id" placeholder="ID">
+            <button class="btn" name="action" value="delete">Delete</button>
+        </form>
 
         <h3>Dashboard</h3>
         <table>
             <tr>
                 <th>ID</th>
+                <th>Name</th>
                 <th>Team</th>
                 <th>Date</th>
                 <th>Day</th>
@@ -208,6 +251,7 @@ def index():
             {% for r in data %}
             <tr>
                 <td>{{r.id}}</td>
+                <td>{{r.name}}</td>
                 <td>{{r.team}}</td>
                 <td>{{r.date}}</td>
                 <td>{{r.day}}</td>
@@ -216,22 +260,20 @@ def index():
             {% endfor %}
         </table>
 
-        <br><br>
+        <br>
 
-        <!-- ✅ FIXED EXPORT BUTTON -->
+        <!-- ✅ REAL WORKING BUTTON -->
         /export
             <button class="btn">⬇ Export Excel</button>
-        </a>
+        </form>
 
     </div>
-
     </body>
     </html>
-    """, message=message, data=data, summary=summary, today=today, today_day=today_day)
+    """, data=data, message=message, today=today, today_day=today_day)
 
 # -----------------------------
 # RUN
 # -----------------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(debug=True)
