@@ -43,14 +43,14 @@ def init_db():
 init_db()
 
 # -----------------------------
-# DATE FORMAT ✅ 03/06/26
+# DATE FORMAT
 # -----------------------------
 def get_today():
     now = datetime.now()
     return now.strftime("%d/%m/%y"), now.strftime("%A")
 
 # -----------------------------
-# USERS
+# USER FUNCTIONS
 # -----------------------------
 def get_users():
     conn = sqlite3.connect(DB_NAME)
@@ -104,7 +104,7 @@ def mark_attendance(uid):
     return "Scan successful"
 
 # -----------------------------
-# DASHBOARD ✅ OT / NI
+# DASHBOARD
 # -----------------------------
 def get_dashboard():
     today, today_day = get_today()
@@ -146,14 +146,13 @@ def get_dashboard():
     return result
 
 # -----------------------------
-# ✅ EXPORT (SAVE + DOWNLOAD)
+# ✅ EXPORT EXCEL
 # -----------------------------
-@app.route("/export", methods=["POST"])
+@app.route("/export_excel", methods=["POST"])
 def export_excel():
     data = get_dashboard()
     df = pd.DataFrame(data)
 
-    # Ensure folder exists
     os.makedirs("static", exist_ok=True)
 
     filename = f"attendance_{datetime.now().strftime('%d%m%y')}.xlsx"
@@ -161,7 +160,23 @@ def export_excel():
 
     df.to_excel(filepath, index=False)
 
-    # ✅ Redirect to download
+    return redirect(f"/download/{filename}")
+
+# -----------------------------
+# ✅ EXPORT CSV (NEW)
+# -----------------------------
+@app.route("/export_csv", methods=["POST"])
+def export_csv():
+    data = get_dashboard()
+    df = pd.DataFrame(data)
+
+    os.makedirs("static", exist_ok=True)
+
+    filename = f"attendance_{datetime.now().strftime('%d%m%y')}.csv"
+    filepath = os.path.join("static", filename)
+
+    df.to_csv(filepath, index=False)
+
     return redirect(f"/download/{filename}")
 
 # -----------------------------
@@ -173,7 +188,7 @@ def download_file(filename):
                      as_attachment=True)
 
 # -----------------------------
-# MAIN UI
+# MAIN PAGE
 # -----------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -209,11 +224,11 @@ def index():
     <head>
     <style>
     body { font-family: Arial; background:#f2f2f2; text-align:center; }
-    .box { background:white; padding:20px; margin:20px auto; width:85%; border-radius:10px; }
+    .box { background:white; padding:20px; margin:20px auto; width:90%; border-radius:10px; }
     table { width:100%; border-collapse:collapse; }
     th, td { padding:10px; border:1px solid #ddd; }
     th { background:#007BFF; color:white; }
-    .btn { padding:10px 20px; background:#007BFF; color:white; border:none; border-radius:6px; cursor:pointer; }
+    .btn { padding:10px 20px; background:#007BFF; color:white; border:none; border-radius:6px; cursor:pointer; margin:5px; }
     </style>
     </head>
 
@@ -255,7 +270,6 @@ def index():
                 <th>Day</th>
                 <th>Status</th>
             </tr>
-
             {% for r in data %}
             <tr>
                 <td>{{r.id}}</td>
@@ -270,9 +284,13 @@ def index():
 
         <br><br>
 
-        <!-- ✅ GUARANTEED WORKING EXPORT -->
-        /export
+        <!-- ✅ EXPORT BUTTONS -->
+        /export_excel
             <button class="btn">⬇ Export Excel</button>
+        </form>
+
+        /export_csv
+            <button class="btn">⬇ Export CSV</button>
         </form>
 
     </div>
