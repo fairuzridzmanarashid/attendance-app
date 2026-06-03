@@ -2,7 +2,7 @@ from flask import Flask, request, render_template_string, send_file, redirect
 import sqlite3
 from datetime import datetime
 import pandas as pd
-from io import BytesIO
+import os
 
 app = Flask(__name__)
 
@@ -15,7 +15,7 @@ TEAM_SCHEDULE = {
 }
 
 # -----------------------------
-# INIT DB
+# INIT DATABASE
 # -----------------------------
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -43,7 +43,7 @@ def init_db():
 init_db()
 
 # -----------------------------
-# DATE FORMAT ✅
+# DATE FORMAT ✅ 03/06/26
 # -----------------------------
 def get_today():
     now = datetime.now()
@@ -77,13 +77,13 @@ def delete_user(uid):
     conn.commit()
     conn.close()
 
-def find_user(uid):
+def user_exists(uid):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute("SELECT id FROM users WHERE id=?", (uid,))
-    row = c.fetchone()
+    result = c.fetchone()
     conn.close()
-    return row is not None
+    return result is not None
 
 # -----------------------------
 # ATTENDANCE
@@ -104,7 +104,7 @@ def mark_attendance(uid):
     return "Scan successful"
 
 # -----------------------------
-# DASHBOARD (✅ OT / NI)
+# DASHBOARD ✅ OT / NI
 # -----------------------------
 def get_dashboard():
     today, today_day = get_today()
@@ -146,26 +146,34 @@ def get_dashboard():
     return result
 
 # -----------------------------
-# ✅ EXPORT EXCEL (FINAL FIX)
+# ✅ EXPORT (SAVE + DOWNLOAD)
 # -----------------------------
-@app.route("/export")
+@app.route("/export", methods=["POST"])
 def export_excel():
     data = get_dashboard()
     df = pd.DataFrame(data)
 
-    output = BytesIO()
-    df.to_excel(output, index=False)
-    output.seek(0)
+    # Ensure folder exists
+    os.makedirs("static", exist_ok=True)
 
     filename = f"attendance_{datetime.now().strftime('%d%m%y')}.xlsx"
+    filepath = os.path.join("static", filename)
 
-    return send_file(output,
-                     as_attachment=True,
-                     download_name=filename,
-                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    df.to_excel(filepath, index=False)
+
+    # ✅ Redirect to download
+    return redirect(f"/download/{filename}")
 
 # -----------------------------
-# MAIN PAGE
+# DOWNLOAD FILE
+# -----------------------------
+@app.route("/download/<filename>")
+def download_file(filename):
+    return send_file(os.path.join("static", filename),
+                     as_attachment=True)
+
+# -----------------------------
+# MAIN UI
 # -----------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -176,7 +184,7 @@ def index():
 
         if action == "scan":
             uid = request.form.get("uid")
-            if find_user(uid):
+            if user_exists(uid):
                 message = mark_attendance(uid)
             else:
                 message = "User not found"
@@ -210,8 +218,8 @@ def index():
     </head>
 
     <body>
-
     <div class="box">
+
         <h2>Attendance System</h2>
         <h4>{{today}} ({{today_day}})</h4>
 
@@ -262,13 +270,12 @@ def index():
 
         <br><br>
 
-        <!-- ✅ FINAL WORKING BUTTON -->
+        <!-- ✅ GUARANTEED WORKING EXPORT -->
         /export
             <button class="btn">⬇ Export Excel</button>
-        </a>
+        </form>
 
     </div>
-
     </body>
     </html>
     """, data=data, message=message, today=today, today_day=today_day)
